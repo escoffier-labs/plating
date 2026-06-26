@@ -20,7 +20,7 @@ You want a clean terminal recording at the top of your README, the kind that typ
 ## Install
 
 ```bash
-pipx install plating
+pipx install plating-cli
 npm install -g svg-term-cli   # the SVG renderer plating shells out to
 ```
 
