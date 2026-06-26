@@ -1,0 +1,8 @@
+{
+  "source": "git",
+  "path": "repo",
+  "records": 3,
+  "files": 1,
+  "warnings": [],
+  "generated_at": "2026-06-26T15:29:19.300178793Z"
+}

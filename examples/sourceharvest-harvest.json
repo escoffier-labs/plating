@@ -1,0 +1,12 @@
+{
+  "title": "sourceharvest-harvest",
+  "width": 94,
+  "height": 28,
+  "padding": 14,
+  "steps": [
+    { "command": "ls notes/", "output_file": "sourceharvest-ls.txt" },
+    { "command": "sourceharvest markdown notes --source notes --collection runbooks --out notes.jsonl --json", "output_file": "sourceharvest-notes.txt" },
+    { "command": "sourceharvest gitlog repo --source git --collection demo-app --out commits.jsonl --json", "output_file": "sourceharvest-gitlog.txt" },
+    { "command": "jq -r .schema notes.jsonl commits.jsonl | sort -u", "output_file": "sourceharvest-schema.txt" }
+  ]
+}
