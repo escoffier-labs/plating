@@ -1,0 +1,5 @@
+[OK  ] config: loaded
+[OK  ] routing: 2 channel(s) selected
+[FAIL] channel:discord-main: webhook env missing or empty
+[WARN] channel:signal-personal: inactive channel: url/from/to env missing or empty
+[FAIL] channel:telegram-personal: token/chat env missing or empty

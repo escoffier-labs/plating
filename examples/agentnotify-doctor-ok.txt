@@ -1,0 +1,5 @@
+[OK  ] config: loaded
+[OK  ] routing: 2 channel(s) selected
+[OK  ] channel:discord-main: env present
+[WARN] channel:signal-personal: inactive channel: url/from/to env missing or empty
+[OK  ] channel:telegram-personal: env present
