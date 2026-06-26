@@ -1,0 +1,12 @@
+{
+  "title": "stationtrail-harvest",
+  "width": 88,
+  "height": 14,
+  "padding": 14,
+  "steps": [
+    { "command": "stationtrail capabilities --json | jq -c .sources", "output_file": "stationtrail-cap.txt" },
+    { "command": "stationtrail codex logs/codex.jsonl --redact safe --dry-run", "output_file": "stationtrail-codex.txt" },
+    { "command": "stationtrail claude logs/claude.jsonl --redact safe --dry-run", "output_file": "stationtrail-claude.txt" },
+    { "command": "stationtrail codex logs/codex.jsonl --out - --redact safe | jq -r .schema | uniq", "output_file": "stationtrail-schema.txt" }
+  ]
+}
