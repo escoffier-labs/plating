@@ -1,0 +1,11 @@
+{
+  "title": "brigade-quickstart",
+  "width": 84,
+  "height": 30,
+  "padding": 14,
+  "steps": [
+    { "command": "brigade --version", "output_file": "brigade-version.txt" },
+    { "command": "brigade operator quickstart --target ./my-repo --harnesses codex", "output_file": "brigade-quickstart-out.txt" },
+    { "command": "brigade operator doctor --target ./my-repo --profile local-operator", "output_file": "brigade-doctor-out.txt" }
+  ]
+}

@@ -1,0 +1,20 @@
+operator quickstart: ~/my-repo
+depth: repo
+harnesses: codex
+owner: codex (auto-selected; override with --owner)
+dry_run: False
+[ok] brigade-init
+[ok] operator-init
+[ok] portable-bootstrap
+[ok] mcp-init
+[ok] verify-codex
+status: ok
+next:
+- brigade operator doctor --target . --profile local-operator
+- brigade tools list --target .
+- brigade skills doctor --target .
+- brigade mcp init --target .
+- brigade mcp sync --write --target .
+- brigade security scan --target . --output-dir .brigade/security/latest
+- brigade operator verify-harness --target . --harness codex
+issues: https://github.com/escoffier-labs/brigade/issues/new/choose

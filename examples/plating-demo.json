@@ -1,0 +1,10 @@
+{
+  "title": "plating-demo",
+  "width": 74,
+  "height": 8,
+  "padding": 14,
+  "steps": [
+    { "command": "plating --version", "output": "plating 0.1.0\n" },
+    { "command": "plating render quickstart.json", "output": "plating: leak scan clean (quickstart.cast)\nplating: wrote quickstart.svg\n" }
+  ]
+}
