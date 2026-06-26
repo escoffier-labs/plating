@@ -1,0 +1,12 @@
+{
+  "title": "miseledger-ledger",
+  "width": 92,
+  "height": 27,
+  "padding": 14,
+  "steps": [
+    { "command": "miseledger init", "output_file": "ml-init.txt" },
+    { "command": "miseledger import adapter session.jsonl", "output_file": "ml-import.txt" },
+    { "command": "miseledger search smoke", "output_file": "ml-search.txt" },
+    { "command": "miseledger stats", "output_file": "ml-stats.txt" }
+  ]
+}

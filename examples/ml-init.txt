@@ -1,0 +1,10 @@
+{
+  "ok": true,
+  "paths": {
+    "config_path": "~/.config/miseledger/config.toml",
+    "data_dir": "~/.local/share/miseledger",
+    "db_path": "~/.local/share/miseledger/miseledger.db",
+    "cache_dir": "~/.cache/miseledger"
+  },
+  "schema_version": 1
+}
