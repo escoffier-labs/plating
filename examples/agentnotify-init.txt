@@ -1,0 +1,1 @@
+wrote config to ~/.config/agent-notify/config.toml

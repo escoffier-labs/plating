@@ -1,0 +1,12 @@
+{
+  "title": "agentnotify-wiring",
+  "width": 88,
+  "height": 18,
+  "padding": 14,
+  "steps": [
+    { "command": "agent-notify init", "output_file": "agentnotify-init.txt" },
+    { "command": "agent-notify doctor", "output_file": "agentnotify-doctor-missing.txt" },
+    { "command": "export DISCORD_WEBHOOK_URL=x TELEGRAM_BOT_TOKEN=x TELEGRAM_CHAT_ID=x", "output_file": "agentnotify-export.txt" },
+    { "command": "agent-notify doctor", "output_file": "agentnotify-doctor-ok.txt" }
+  ]
+}
