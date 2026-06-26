@@ -1,0 +1,1 @@
+postiz-mcp fatal: POSTIZ_URL is required (e.g. http://localhost:5000 or https://postiz.example.com). Set it in your MCP client env config.

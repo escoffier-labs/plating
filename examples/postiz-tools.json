@@ -1,0 +1,12 @@
+{
+  "title": "postiz-tools",
+  "width": 98,
+  "height": 35,
+  "padding": 14,
+  "steps": [
+    { "command": "npm install -g postiz-mcp", "output_file": "postiz-install.txt" },
+    { "command": "postiz-mcp", "output_file": "postiz-safefail.txt" },
+    { "command": "export POSTIZ_URL=http://localhost:5000 POSTIZ_API_KEY=demo", "output": "" },
+    { "command": "npx @modelcontextprotocol/inspector --cli postiz-mcp --method tools/list | jq -r '.tools[].name'", "output_file": "postiz-tools.txt" }
+  ]
+}
