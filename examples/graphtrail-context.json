@@ -1,0 +1,12 @@
+{
+  "title": "graphtrail-context",
+  "width": 84,
+  "height": 26,
+  "padding": 14,
+  "steps": [
+    { "command": "graphtrail init", "output_file": "graphtrail-init.txt" },
+    { "command": "graphtrail sync", "output_file": "graphtrail-sync.txt" },
+    { "command": "graphtrail callers summarize", "output_file": "graphtrail-callers.txt" },
+    { "command": "graphtrail context build_report", "output_file": "graphtrail-context.txt" }
+  ]
+}

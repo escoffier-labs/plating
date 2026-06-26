@@ -1,0 +1,15 @@
+# Context
+
+task: build_report
+
+## Entry Points
+- function `build_report` at app.py:8
+
+## Callers
+- `main` calls `build_report`
+
+## Callees
+- `build_report` calls `summarize`
+
+## Related Files
+- app.py

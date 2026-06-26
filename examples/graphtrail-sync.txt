@@ -1,0 +1,1 @@
+indexed files=2 symbols=6 calls=5 imports=1 deleted=0 db=./.graphtrail/graphtrail.db
