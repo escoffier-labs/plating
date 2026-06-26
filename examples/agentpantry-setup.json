@@ -1,0 +1,12 @@
+{
+  "title": "agentpantry-setup",
+  "width": 86,
+  "height": 32,
+  "padding": 14,
+  "steps": [
+    { "command": "agentpantry init -role sink", "output_file": "ap-init.txt" },
+    { "command": "agentpantry keygen", "output_file": "ap-keygen.txt" },
+    { "command": "agentpantry doctor -no-net", "output_file": "ap-doctor.txt" },
+    { "command": "agentpantry status -json", "output_file": "ap-status.txt" }
+  ]
+}

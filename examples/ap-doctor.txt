@@ -1,0 +1,4 @@
+[OK  ] key: private, 32 bytes
+[OK  ] config: sink 127.0.0.1:8787
+[OK  ] bind: loopback
+[OK  ] surface:sidecar: plaintext sidecar

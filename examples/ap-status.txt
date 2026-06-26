@@ -1,0 +1,16 @@
+{
+  "allow": [],
+  "browsers": 0,
+  "configured": true,
+  "deny": [],
+  "key_present": true,
+  "last_cookies": 0,
+  "last_secrets": 0,
+  "last_sync": "never",
+  "peer": "127.0.0.1:8787",
+  "role": "sink",
+  "rotation_in_progress": false,
+  "surfaces": [
+    "sidecar"
+  ]
+}

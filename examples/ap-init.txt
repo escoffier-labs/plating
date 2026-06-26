@@ -1,0 +1,2 @@
+wrote sink config to ~/.config/agentpantry/config.toml
+edit it, then run `agentpantry doctor` to validate
