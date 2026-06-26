@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/plating-social-preview.jpg" alt="plating banner" width="900">
+</p>
+
 <h1 align="center">plating</h1>
 
 <p align="center"><strong>Reproducible, sanitized terminal-demo SVGs for READMEs and websites.</strong></p>
