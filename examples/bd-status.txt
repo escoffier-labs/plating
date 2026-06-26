@@ -1,0 +1,14 @@
+bootstrap-doctor status  (soft=10000, hard=11500, ceiling=12000)
+
+workspace  ~/agent-workspace
+  file             chars  lines   soft    hard  sev
+  AGENTS.md         7360     72  +2640   +4140  ok
+  TOOLS.md          4284     47  +5716   +7216  ok
+  SOUL.md          18188     92  -8188   -6688  HARD
+  USER.md           1214     20  +8786  +10286  ok
+  SAFETY_RULES.md   2032     30  +7968   +9468  ok
+  IDENTITY.md        628     16  +9372  +10872  ok
+  HEARTBEAT.md       601     14  +9399  +10899  ok
+  MEMORY.md          912     18  +9088  +10588  ok
+
+summary: 8 files, 1 over hard, 0 over soft, 0 missing

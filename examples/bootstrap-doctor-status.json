@@ -1,0 +1,9 @@
+{
+  "title": "bootstrap-doctor-status",
+  "width": 76,
+  "height": 18,
+  "padding": 14,
+  "steps": [
+    { "command": "bootstrap-doctor status", "output_file": "bd-status.txt" }
+  ]
+}
