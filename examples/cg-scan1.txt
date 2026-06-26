@@ -1,0 +1,7 @@
+notes.md: 3 finding(s), blocked=true, changed=true
+  L2:19 BLOCK infrastructure/localhost-port source=regex: 'localhost:5000'
+    Local service endpoint.
+  L3:12 BLOCK infrastructure/loopback-ipv4 source=regex: '127.0.0.1'
+    Loopback IPv4 address.
+  L4:22 BLOCK infrastructure/port-reference source=regex: 'port 8125'
+    Likely internal service port reference.

@@ -1,0 +1,4 @@
+# deploy notes
+api base:  http://[redacted-service]
+search:    [redacted-ip]:9200
+metrics:   statsd on port [redacted]

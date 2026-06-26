@@ -1,0 +1,12 @@
+{
+  "title": "content-guard-redact",
+  "width": 84,
+  "height": 25,
+  "padding": 14,
+  "steps": [
+    { "command": "content-guard scan notes.md", "output_file": "cg-scan1.txt" },
+    { "command": "content-guard redact notes.md --in-place", "output": "" },
+    { "command": "cat notes.md", "output_file": "cg-notes-redacted.txt" },
+    { "command": "content-guard scan notes.md", "output_file": "cg-scan2.txt" }
+  ]
+}
