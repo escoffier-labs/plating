@@ -1,0 +1,9 @@
+memory dir:       ~/.claude/memory
+  cards:          2
+  MEMORY.md:      5 lines, 172 bytes
+  threshold:      180 (ok)
+  dead links:     1
+
+handoffs dir:     ~/.claude/memory-handoffs
+  pending:        0
+  processed:      0

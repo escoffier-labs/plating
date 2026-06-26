@@ -1,0 +1,10 @@
+{
+  "title": "memory-doctor-check",
+  "width": 78,
+  "height": 22,
+  "padding": 14,
+  "steps": [
+    { "command": "memory-doctor status", "output_file": "md-status.txt" },
+    { "command": "memory-doctor lint", "output_file": "md-lint.txt" }
+  ]
+}
