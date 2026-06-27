@@ -1,0 +1,10 @@
+{
+  "title": "tokenjuice-compaction",
+  "width": 84,
+  "height": 28,
+  "padding": 14,
+  "steps": [
+    { "command": "tokenjuice wrap -- seq 1 6000", "output_file": "tokenjuice-wrap.txt" },
+    { "command": "tokenjuice wrap --raw -- seq 1 6000 | tail -3", "output_file": "tokenjuice-raw.txt" }
+  ]
+}
