@@ -6,4 +6,6 @@ dist/
 .venv/
 .pytest_cache/
 .claude/
+.brigade/
+memory/
 *.frame.svg

@@ -16,12 +16,12 @@ def test_header_is_valid_asciicast_v2():
 
 
 def test_commands_and_output_are_present_verbatim():
-    cast = build_cast([Step("brigade --version", "brigade 0.13.0\n")], _FAST)
+    cast = build_cast([Step("brigade --version", "brigade 0.16.0\n")], _FAST)
     events = [json.loads(line) for line in cast.splitlines()[1:]]
     assert all(event[1] == "o" for event in events)
     blob = "".join(event[2] for event in events)
     assert "brigade --version" in blob
-    assert "brigade 0.13.0" in blob
+    assert "brigade 0.16.0" in blob
 
 
 def test_timestamps_are_monotonic():
