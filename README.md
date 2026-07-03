@@ -7,6 +7,7 @@
 <p align="center"><strong>Reproducible, sanitized terminal-demo SVGs for READMEs and websites.</strong></p>
 
 <p align="center">
+  <img src="https://shieldcn.dev/github/actions/workflow/status/escoffier-labs/plating/ci.yml.svg?branch=main&label=ci" alt="CI status">
   <img src="https://shieldcn.dev/pypi/plating-cli.svg" alt="PyPI version">
   <img src="https://shieldcn.dev/badge/python-3.10%2B-blue.svg?logo=python&logoColor=white" alt="Python 3.10+">
   <img src="https://shieldcn.dev/badge/license-MIT-green.svg" alt="MIT license">
@@ -22,7 +23,7 @@
 
 You want a clean terminal recording at the top of your README, the kind that types a command and shows real output in a tidy macOS-style window. Recording one by hand means fighting a screen recorder, leaking your home path and hostname into the frames, and redoing it whenever the output changes. plating turns a small JSON spec into that SVG, every time, from real command output, with a leak scan in front of it.
 
-- **Reproducible.** Commit the spec and its captured output; regenerate the exact SVG with one command.
+- **Reproducible.** Commit the spec and its captured output. Regenerate the exact SVG with one command.
 - **Sanitized.** A built-in leak scan refuses to render if a home path, username, hostname, or private IP slips into the frame.
 - **Honest.** Commands and their output are verbatim. Only the typing animation and a throwaway-path to `~` rewrite are synthesized.
 - **Portable.** The animated SVG embeds in GitHub READMEs and on web pages as a plain `<img>`, with no runtime JavaScript.
@@ -58,6 +59,14 @@ plating render quickstart.json
 
 Then embed `quickstart.svg` in your README or drop it into a site.
 
+## A real example
+
+`examples/brigade-quickstart.json` rebuilds the quickstart recording used in the [Brigade](https://github.com/escoffier-labs/brigade) README from its real, captured output:
+
+```bash
+plating render examples/brigade-quickstart.json
+```
+
 ## Where each step's output comes from
 
 In priority order:
@@ -68,7 +77,7 @@ In priority order:
 | `"output_file": "path"` | a captured-output file (relative to the spec) |
 | `"run": true` (or `plating render --run`) | the live result of running `command` |
 
-Live capture (`--run`) is convenient; committing captured output is what makes it reproducible in CI. Use `normalize` to rewrite a throwaway path into something clean:
+Live capture (`--run`) is convenient. Committing captured output is what makes it reproducible in CI. Use `normalize` to rewrite a throwaway path into something clean:
 
 ```json
 { "normalize": [["/tmp/tmp.AbC123/demo", "~/my-repo"]] }
@@ -76,11 +85,25 @@ Live capture (`--run`) is convenient; committing captured output is what makes i
 
 ## Sanitization
 
-Before rendering, plating scans the recording for `/home/...` and `/Users/...` paths, the machine's current username and hostname, and private IPs. If it finds one it refuses to render and tells you how to fix it (add a `normalize` rule, or pass `--allow-leaks`). You can scan any file on its own:
+Before rendering, plating scans the recording for Unix and macOS home paths, the machine's current username and hostname, and private IPs. If it finds one it refuses to render and tells you how to fix it (add a `normalize` rule, or pass `--allow-leaks`). You can scan any file on its own:
 
 ```bash
 plating scan some-recording.cast
 ```
+
+## Why not a screen recorder or svg-term by hand?
+
+A screen recorder can capture a terminal demo, but it leaves you fighting the recording, redoing it when output changes, and checking every frame for home paths and hostnames.
+
+Calling `svg-term-cli` directly is still useful. plating shells out to it, then adds the JSON spec, captured output, reproducible `.cast` source, and leak scan before rendering.
+
+## What plating is not
+
+plating is not a screen recorder. It renders an SVG from a JSON spec and literal, captured-file, or live command output.
+
+plating is not a silent sanitizer. If the scan finds a home path, username, hostname, or private IP, rendering stops until you add a `normalize` rule or explicitly pass `--allow-leaks`.
+
+plating is not a guarantee that live commands will stay reproducible. Live capture with `--run` is convenient. Committing captured output is what makes the demo reproducible in CI.
 
 ## Options
 
@@ -94,14 +117,6 @@ plating scan <file>
 ```
 
 `--png MS` writes a static PNG of the frame at MS milliseconds (via headless Chrome), handy for a quick eyeball before you commit the SVG.
-
-## A real example
-
-`examples/brigade-quickstart.json` rebuilds the quickstart recording used in the [Brigade](https://github.com/escoffier-labs/brigade) README from its real, captured output:
-
-```bash
-plating render examples/brigade-quickstart.json
-```
 
 ## License
 
