@@ -1,0 +1,12 @@
+{
+  "title": "agent-notify-send",
+  "width": 88,
+  "height": 22,
+  "padding": 14,
+  "steps": [
+    { "command": "cat config.toml", "output_file": "an-config.txt" },
+    { "command": "export DISCORD_WEBHOOK_URL=http://127.0.0.1:8199/api/webhooks/1234567890/demo-token", "output": "" },
+    { "command": "echo \"Build finished: 214 tests passed\" | agent-notify send -config config.toml && echo \"sent, exit 0\"", "output_file": "an-send.txt" },
+    { "command": "cat webhook.log", "output_file": "an-webhook.txt" }
+  ]
+}
