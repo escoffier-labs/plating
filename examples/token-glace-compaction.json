@@ -1,0 +1,10 @@
+{
+  "title": "token-glace-compaction",
+  "width": 84,
+  "height": 28,
+  "padding": 14,
+  "steps": [
+    { "command": "token-glace wrap -- seq 1 6000", "output_file": "token-glace-wrap.txt" },
+    { "command": "token-glace wrap --raw -- seq 1 6000 | tail -3", "output_file": "token-glace-raw.txt" }
+  ]
+}

@@ -1,0 +1,7 @@
+[channels.discord-main]
+type = "discord"
+webhook_url_env = "DISCORD_WEBHOOK_URL"
+
+[profiles.agent-stop]
+channels = ["discord-main"]
+default = true
