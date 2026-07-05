@@ -61,3 +61,16 @@ def resolve_steps(data, base_dir, *, run=False, cwd=None) -> list[Step]:
             output = ""
         steps.append(Step(command=command, output=_normalize(output, rules)))
     return steps
+
+
+def resolve_live_steps(data, base_dir, *, cwd=None) -> list[Step]:
+    rules = data.get("normalize", [])
+    cwd = cwd or data.get("cwd")
+    steps: list[Step] = []
+    for raw in data["steps"]:
+        command = raw["command"]
+        proc = subprocess.run(command, shell=True, cwd=cwd,
+                              capture_output=True, text=True)
+        output = proc.stdout + proc.stderr
+        steps.append(Step(command=command, output=_normalize(output, rules)))
+    return steps

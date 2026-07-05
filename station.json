@@ -1,0 +1,26 @@
+{
+  "schema": "brigade.station.v1",
+  "name": "plating",
+  "station": "guard",
+  "summary": "demo rendering, leak scanning, and recorded-output drift verification",
+  "tools": [
+    {
+      "name": "plating",
+      "command": "plating",
+      "summary": "render command demos and verify specs against live CLI output",
+      "install": ["pipx", "install", "git+https://github.com/escoffier-labs/plating"],
+      "surfaces": [
+        {
+          "kind": "verify-exit",
+          "command": ["plating", "verify", "<spec>"],
+          "timeout_seconds": 60
+        },
+        {
+          "kind": "verify-exit",
+          "command": ["plating", "scan", "<cast>", "--policy", "<content-guard-policy>"],
+          "timeout_seconds": 30
+        }
+      ]
+    }
+  ]
+}

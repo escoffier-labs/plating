@@ -76,21 +76,25 @@ Live capture (`--run`) is convenient; committing captured output is what makes i
 
 ## Sanitization
 
-Before rendering, plating scans the recording for `/home/...` and `/Users/...` paths, the machine's current username and hostname, and private IPs. If it finds one it refuses to render and tells you how to fix it (add a `normalize` rule, or pass `--allow-leaks`). You can scan any file on its own:
+Before rendering, plating scans the recording for `/home/...` and `/Users/...` paths, the machine's current username and hostname, and private IPs. If it finds one it refuses to render and tells you how to fix it (add a `normalize` rule, or pass `--allow-leaks`). You can also point the scan at a Content Guard policy JSON so demo recordings share the same fleet denylist:
 
 ```bash
 plating scan some-recording.cast
+plating scan some-recording.cast --policy ../content-guard/policies/public-repo.json
+plating render quickstart.json --scan-policy ../content-guard/policies/public-repo.json
+plating verify quickstart.json --scan-policy ../content-guard/policies/public-repo.json
 ```
 
 ## Options
 
-**Spec keys:** `title`, `width`, `height`, `padding`, `window` (macOS chrome, on by default), `prompt`, `prompt_color`, the timing knobs (`type_speed`, `line_delay`, `command_pause`, ... see `src/plating/cast.py`), `normalize`, `scan_patterns`, `cwd`.
+**Spec keys:** `title`, `width`, `height`, `padding`, `window` (macOS chrome, on by default), `prompt`, `prompt_color`, the timing knobs (`type_speed`, `line_delay`, `command_pause`, ... see `src/plating/cast.py`), `normalize`, `scan_patterns`, `scan_policy`, `cwd`.
 
 **CLI:**
 
 ```
-plating render <spec> [--run] [--cwd DIR] [--out-dir DIR] [--png MS] [--allow-leaks]
-plating scan <file>
+plating render <spec> [--run] [--cwd DIR] [--out-dir DIR] [--png MS] [--allow-leaks] [--scan-policy FILE]
+plating verify <spec> [--cwd DIR] [--allow-leaks] [--scan-policy FILE]
+plating scan <file> [--policy FILE]
 ```
 
 `--png MS` writes a static PNG of the frame at MS milliseconds (via headless Chrome), handy for a quick eyeball before you commit the SVG.
