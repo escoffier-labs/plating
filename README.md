@@ -4,7 +4,21 @@
 
 <h1 align="center">plating</h1>
 
-<p align="center"><strong>Reproducible, sanitized terminal-demo SVGs for READMEs and websites.</strong></p>
+<p align="center">
+  <img src="docs/assets/marks/plating-circle.svg" alt="" width="40" height="40">
+</p>
+
+<p align="center">
+  <strong>README terminal demos without recording leaks.</strong>
+</p>
+
+<p align="center">
+  Turn a small JSON spec plus captured command output into a reproducible, sanitized animated SVG. Leak scan refuses home paths and hostnames. No runtime JavaScript in the embed.
+</p>
+
+<p align="center">
+  <a href="#install">Install</a> &middot; <a href="#use-it">Use it</a> &middot; <a href="https://github.com/escoffier-labs/brigade">Used by Brigade</a>
+</p>
 
 <p align="center">
   <img src="https://img.shields.io/pypi/v/plating-cli?style=for-the-badge&label=pypi" alt="PyPI version">
@@ -12,27 +26,29 @@
   <img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge" alt="MIT license">
 </p>
 
-<p align="center">
-  <img src="examples/plating-demo.svg" alt="plating rendering a demo spec into an SVG" width="640">
-</p>
-
-<p align="center"><em>That recording was made by plating: <code>plating render examples/plating-demo.json</code>.</em></p>
-
-## What it does
-
-You want a clean terminal recording at the top of your README, the kind that types a command and shows real output in a tidy macOS-style window. Recording one by hand means fighting a screen recorder, leaking your home path and hostname into the frames, and redoing it whenever the output changes. plating turns a small JSON spec into that SVG, every time, from real command output, with a leak scan in front of it.
-
-- **Reproducible.** Commit the spec and its captured output; regenerate the exact SVG with one command.
-- **Sanitized.** A built-in leak scan refuses to render if a home path, username, hostname, or private IP slips into the frame.
-- **Honest.** Commands and their output are verbatim. Only the typing animation and a throwaway-path to `~` rewrite are synthesized.
-- **Portable.** The animated SVG embeds in GitHub READMEs and on web pages as a plain `<img>`, with no runtime JavaScript.
-
 ## Install
 
 ```bash
 pipx install plating-cli
-npm install -g svg-term-cli   # the SVG renderer plating shells out to
+npm install -g svg-term-cli   # SVG renderer plating shells out to
+plating render examples/plating-demo.json
 ```
+
+## What it does
+
+| | Job | What you get |
+|---|---|---|
+| **Spec** | JSON steps + outputs | Commands stay honest; animation is synthesized |
+| **Scan** | Refuse identity leaks | Home paths, username, hostname, private IPs |
+| **Render** | Animated SVG embed | GitHub README and sites as a plain img |
+| **Verify** | Drift detection | Re-run specs when CLI output changes |
+
+<p align="center">
+  <img src="examples/plating-demo.svg" alt="plating rendering a demo spec into an SVG" width="760">
+</p>
+
+<p align="center"><em>That recording was made by plating itself.</em></p>
+
 
 ## Use it
 
