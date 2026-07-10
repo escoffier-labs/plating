@@ -159,9 +159,8 @@ def render_workflow(data: dict) -> str:
         y1 = source[1] + source[3] / 2
         x2 = target[0]
         y2 = target[1] + target[3] / 2
-        bend = max(18, (x2 - x1) / 2)
         out.append(
-            f'  <path d="M{x1:.1f},{y1:.1f} C{x1 + bend:.1f},{y1:.1f} {x2 - bend:.1f},{y2:.1f} {x2:.1f},{y2:.1f}" fill="none" stroke="{ACCENT}" stroke-width="1.5" opacity="0.9" marker-end="url(#workflow-arrow)"/>'
+            f'  <line class="workflow-edge" x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="{ACCENT}" stroke-width="1.5" opacity="0.9" marker-end="url(#workflow-arrow)"/>'
         )
         if edge.get("label"):
             label_x = (x1 + x2) / 2
@@ -184,21 +183,19 @@ def render_workflow(data: dict) -> str:
             out.append(
                 f'  <rect x="{x:.1f}" y="{y:.1f}" width="{width:.1f}" height="{height}" rx="12" fill="{fill}" stroke="{stroke}"/>'
             )
+            label_y = y + (37 if node.get("badge") else 29)
             out.append(
-                f'  <text x="{x + 16:.1f}" y="{y + 29:.1f}" fill="{TEXT}" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="14" font-weight="600">{_text(node["label"])}</text>'
+                f'  <text class="workflow-node-label" x="{x + 16:.1f}" y="{label_y:.1f}" fill="{TEXT}" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="14" font-weight="600">{_text(node["label"])}</text>'
             )
             if node.get("detail"):
+                detail_y = y + (56 if node.get("badge") else 49)
                 out.append(
-                    f'  <text x="{x + 16:.1f}" y="{y + 49:.1f}" fill="{MUTED}" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="10">{_text(node["detail"])}</text>'
+                    f'  <text x="{x + 16:.1f}" y="{detail_y:.1f}" fill="{MUTED}" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="10">{_text(node["detail"])}</text>'
                 )
             if node.get("badge"):
                 badge = str(node["badge"])
-                badge_width = max(42, len(badge) * 7 + 16)
                 out.append(
-                    f'  <rect x="{x + width - badge_width - 12:.1f}" y="{y + 12:.1f}" width="{badge_width}" height="20" rx="10" fill="{PANEL_2}" stroke="{ACCENT}"/>'
-                )
-                out.append(
-                    f'  <text x="{x + width - badge_width / 2 - 12:.1f}" y="{y + 26:.1f}" text-anchor="middle" fill="{ACCENT}" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="9" font-weight="600">{_text(badge)}</text>'
+                    f'  <text class="workflow-badge" x="{x + 16:.1f}" y="{y + 17:.1f}" fill="{ACCENT}" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="8" font-weight="600" letter-spacing="1.2">{_text(badge.upper())}</text>'
                 )
 
     context = data.get("context")

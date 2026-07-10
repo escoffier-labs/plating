@@ -113,3 +113,38 @@ def test_workflow_command_writes_svg_beside_spec(tmp_path, capsys):
     assert output.exists()
     assert output.read_text() == render_workflow(_spec())
     assert capsys.readouterr().out == f"plating: wrote {output}\n"
+
+
+def test_badge_uses_eyebrow_row_instead_of_overlapping_label():
+    data = _spec()
+    data["columns"][1]["nodes"][0].update(
+        label="graphtrail sync", badge="incremental"
+    )
+
+    root = ET.fromstring(render_workflow(data))
+    namespace = {"svg": "http://www.w3.org/2000/svg"}
+    badge = root.find('.//svg:text[@class="workflow-badge"]', namespace)
+    label = next(
+        element
+        for element in root.findall(
+            './/svg:text[@class="workflow-node-label"]', namespace
+        )
+        if element.text == "graphtrail sync"
+    )
+
+    assert badge is not None
+    assert label is not None
+    assert badge.attrib["x"] == label.attrib["x"]
+    assert float(badge.attrib["y"]) < float(label.attrib["y"])
+    assert root.find('.//svg:rect[@class="workflow-badge"]', namespace) is None
+
+
+def test_edges_use_straight_fleet_connectors():
+    root = ET.fromstring(render_workflow(_spec()))
+    namespace = {"svg": "http://www.w3.org/2000/svg"}
+
+    edges = root.findall('.//svg:line[@class="workflow-edge"]', namespace)
+    curved_edges = root.findall('.//svg:path[@class="workflow-edge"]', namespace)
+
+    assert len(edges) == 2
+    assert curved_edges == []
