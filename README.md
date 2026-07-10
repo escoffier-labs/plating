@@ -84,7 +84,6 @@ Then embed `quickstart.svg` in your README or drop it into a site.
   "title": "Source to release",
   "eyebrow": "BUILD WORKFLOW",
   "description": "Tracked source passes through verification before release.",
-  "accent": "#E0A45C",
   "columns": [
     {"title": "INPUT", "nodes": [{"id": "source", "label": "source"}]},
     {"title": "CHECK", "nodes": [{"id": "test", "label": "tests", "kind": "focus"}]},

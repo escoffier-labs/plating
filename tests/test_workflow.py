@@ -13,7 +13,6 @@ def _spec():
         "eyebrow": "THE WORKFLOW",
         "description": "Source & checks become a release.",
         "meta": "deterministic SVG",
-        "accent": "#E0A45C",
         "columns": [
             {
                 "title": "INPUT",
@@ -64,6 +63,20 @@ def test_render_workflow_is_accessible_escaped_and_deterministic():
     assert "release" in first
     assert ">pass<" in first
     assert "command + exit code + artifact digest" in first
+    for color in (
+        "#0d1014",
+        "#11161c",
+        "#0f1318",
+        "#dde3ea",
+        "#9aa4b2",
+        "#7d8590",
+        "#e0a45c",
+        "#1e242c",
+        "#2a323d",
+    ):
+        assert color in first
+    assert "#182338" not in first
+    assert "#4F86FF" not in first
 
 
 @pytest.mark.parametrize(
@@ -80,7 +93,6 @@ def test_render_workflow_is_accessible_escaped_and_deterministic():
             "duplicate node id",
         ),
         (lambda data: data["columns"][0].update(nodes=[]), "at least one node"),
-        (lambda data: data.update(accent="amber"), "six-digit hex"),
     ],
 )
 def test_render_workflow_rejects_invalid_specs(mutate, message):

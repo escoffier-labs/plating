@@ -6,7 +6,7 @@ Add a deterministic workflow-diagram mode to Plating, then use GraphTrail as the
 
 ## Visual contract
 
-Workflow diagrams use a 960 by 540 canvas, a dark graphite card, a narrow project-color rail, monospace labels, restrained accent colors, rounded nodes, orthogonal connectors, and a bottom context band. The renderer owns spacing and typography. A project spec supplies content and one accent color.
+Workflow diagrams use a 960 by 540 canvas and the canonical Escoffier Labs dark-ledger tokens from `escoffier-fleet-kit/DESIGN.md`: ink ground, panel fills, amber pipes, quiet hairlines, Inter display text, and IBM Plex Mono labels. The renderer owns color, spacing, typography, rounded nodes, connectors, and the bottom context band. A project spec supplies content only, so fleet diagrams cannot drift into project-specific palettes.
 
 Every SVG includes a `<title>` and `<desc>`. Text is escaped, colors are validated as six-digit hex values, and links between unknown node IDs are rejected.
 
@@ -15,7 +15,6 @@ Every SVG includes a `<title>` and `<desc>`. Text is escaped, colors are validat
 The first version accepts:
 
 - `title`, `eyebrow`, `description`, and optional `meta`
-- optional `accent`, defaulting to Plating amber
 - `columns`, each with a `title` and one or more nodes
 - nodes with `id`, `label`, and optional `detail`, `kind`, or `badge`
 - optional `edges` with `from`, `to`, and optional `label`
