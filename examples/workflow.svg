@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540" role="img" aria-labelledby="workflow-title workflow-desc">
+  <title id="workflow-title">From captured output to a checked-in README demo</title>
+  <desc id="workflow-desc">One source file produces a repeatable artifact with a leak check in the path.</desc>
+  <defs>
+    <linearGradient id="workflow-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#182338"/>
+      <stop offset="1" stop-color="#101722"/>
+    </linearGradient>
+    <linearGradient id="workflow-card" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#171B22"/>
+      <stop offset="1" stop-color="#0E1319"/>
+    </linearGradient>
+    <filter id="workflow-shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#000000" flood-opacity="0.38"/>
+    </filter>
+    <marker id="workflow-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 Z" fill="#E0A45C"/>
+    </marker>
+  </defs>
+  <rect width="960" height="540" fill="url(#workflow-bg)"/>
+  <circle cx="872" cy="52" r="220" fill="#E0A45C" opacity="0.10"/>
+  <circle cx="62" cy="506" r="180" fill="#E0A45C" opacity="0.06"/>
+  <rect x="36" y="28" width="888" height="484" rx="20" fill="url(#workflow-card)" stroke="#2B3543" filter="url(#workflow-shadow)"/>
+  <rect x="36" y="28" width="5" height="484" rx="2.5" fill="#E0A45C"/>
+  <text x="72" y="67" fill="#E0A45C" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" font-weight="700" letter-spacing="2.4">PLATING WORKFLOW</text>
+  <text x="72" y="96" fill="#F4F7FB" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="21" font-weight="700">From captured output to a checked-in README demo</text>
+  <text x="72" y="119" fill="#8190A5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11">One source file produces a repeatable artifact with a leak check in the path.</text>
+  <text x="888" y="67" text-anchor="end" fill="#738198" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10">JSON source · deterministic SVG</text>
+  <line x1="72" y1="139" x2="888" y2="139" stroke="#2A3340"/>
+  <text x="72.0" y="164" fill="#91A0B5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" font-weight="700" letter-spacing="1.7">CAPTURE</text>
+  <text x="354.0" y="164" fill="#91A0B5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" font-weight="700" letter-spacing="1.7">PLATE</text>
+  <text x="636.0" y="164" fill="#91A0B5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" font-weight="700" letter-spacing="1.7">PUBLISH</text>
+  <path d="M324.0,230.0 C342.0,230.0 336.0,230.0 354.0,230.0" fill="none" stroke="#E0A45C" stroke-width="1.6" opacity="0.86" marker-end="url(#workflow-arrow)"/>
+  <path d="M324.0,312.0 C342.0,312.0 336.0,312.0 354.0,312.0" fill="none" stroke="#E0A45C" stroke-width="1.6" opacity="0.86" marker-end="url(#workflow-arrow)"/>
+  <path d="M606.0,230.0 C624.0,230.0 618.0,271.0 636.0,271.0" fill="none" stroke="#E0A45C" stroke-width="1.6" opacity="0.86" marker-end="url(#workflow-arrow)"/>
+  <text x="621.0" y="242.5" text-anchor="middle" fill="#AAB6C7" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9">clean</text>
+  <path d="M606.0,312.0 C624.0,312.0 618.0,271.0 636.0,271.0" fill="none" stroke="#E0A45C" stroke-width="1.6" opacity="0.86" marker-end="url(#workflow-arrow)"/>
+  <rect x="72.0" y="196.0" width="252.0" height="68" rx="12" fill="#141B24" stroke="#465469"/>
+  <text x="88.0" y="225.0" fill="#F3F6FA" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14" font-weight="700">command output</text>
+  <text x="88.0" y="245.0" fill="#7F8DA2" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10">captured text</text>
+  <rect x="72.0" y="278.0" width="252.0" height="68" rx="12" fill="#1C2025" stroke="#E0A45C"/>
+  <text x="88.0" y="307.0" fill="#F3F6FA" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14" font-weight="700">workflow.json</text>
+  <text x="88.0" y="327.0" fill="#7F8DA2" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10">content + edges</text>
+  <rect x="354.0" y="196.0" width="252.0" height="68" rx="12" fill="#201A13" stroke="#E0A45C"/>
+  <text x="370.0" y="225.0" fill="#F3F6FA" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14" font-weight="700">identity scan</text>
+  <text x="370.0" y="245.0" fill="#7F8DA2" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10">paths · hosts · IPs</text>
+  <rect x="550.0" y="208.0" width="44" height="20" rx="10" fill="#0E141C" stroke="#E0A45C"/>
+  <text x="572.0" y="222.0" text-anchor="middle" fill="#E0A45C" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9" font-weight="700">gate</text>
+  <rect x="354.0" y="278.0" width="252.0" height="68" rx="12" fill="#1C2025" stroke="#E0A45C"/>
+  <text x="370.0" y="307.0" fill="#F3F6FA" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14" font-weight="700">SVG renderer</text>
+  <text x="370.0" y="327.0" fill="#7F8DA2" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10">fixed fleet layout</text>
+  <rect x="636.0" y="237.0" width="252.0" height="68" rx="12" fill="#13231D" stroke="#42C77A"/>
+  <text x="652.0" y="266.0" fill="#F3F6FA" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14" font-weight="700">workflow.svg</text>
+  <text x="652.0" y="286.0" fill="#7F8DA2" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10">plain README image</text>
+  <line x1="72" y1="398" x2="888" y2="398" stroke="#2A3340"/>
+  <text x="72" y="427" fill="#E0A45C" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" font-weight="700" letter-spacing="1.6">REBUILD CONTRACT</text>
+  <text x="72" y="455" fill="#E6EBF2" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13" font-weight="700">edit JSON → run plating workflow → commit JSON + SVG</text>
+  <text x="72" y="478" fill="#758399" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10">No browser runtime and no hand-positioned SVG elements in the consuming repo.</text>
+</svg>

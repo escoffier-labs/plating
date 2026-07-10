@@ -1,0 +1,66 @@
+{
+  "title": "From captured output to a checked-in README demo",
+  "eyebrow": "PLATING WORKFLOW",
+  "description": "One source file produces a repeatable artifact with a leak check in the path.",
+  "meta": "JSON source · deterministic SVG",
+  "accent": "#E0A45C",
+  "columns": [
+    {
+      "title": "CAPTURE",
+      "nodes": [
+        {
+          "id": "output",
+          "label": "command output",
+          "detail": "captured text",
+          "kind": "default"
+        },
+        {
+          "id": "spec",
+          "label": "workflow.json",
+          "detail": "content + edges",
+          "kind": "accent"
+        }
+      ]
+    },
+    {
+      "title": "PLATE",
+      "nodes": [
+        {
+          "id": "scan",
+          "label": "identity scan",
+          "detail": "paths · hosts · IPs",
+          "kind": "focus",
+          "badge": "gate"
+        },
+        {
+          "id": "render",
+          "label": "SVG renderer",
+          "detail": "fixed fleet layout",
+          "kind": "accent"
+        }
+      ]
+    },
+    {
+      "title": "PUBLISH",
+      "nodes": [
+        {
+          "id": "svg",
+          "label": "workflow.svg",
+          "detail": "plain README image",
+          "kind": "success"
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {"from": "output", "to": "scan"},
+    {"from": "spec", "to": "render"},
+    {"from": "scan", "to": "svg", "label": "clean"},
+    {"from": "render", "to": "svg"}
+  ],
+  "context": {
+    "title": "REBUILD CONTRACT",
+    "body": "edit JSON → run plating workflow → commit JSON + SVG",
+    "detail": "No browser runtime and no hand-positioned SVG elements in the consuming repo."
+  }
+}

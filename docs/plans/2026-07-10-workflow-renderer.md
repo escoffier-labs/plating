@@ -51,12 +51,12 @@ Execute each task in order and tick every checkbox after its command produces th
 - Create: `examples/workflow.svg`
 - Modify: `README.md`
 
-- [ ] Add a concrete 3-stage example spec using only the documented contract.
-- [ ] Render it with `/usr/bin/env PYTHONPATH=src python3 -m plating.cli workflow examples/workflow.json`; expect `examples/workflow.svg`.
-- [ ] Add the workflow use case, CLI syntax, JSON example, and embedded SVG to the README.
-- [ ] Run the prose leak/style scan and XML parse check; expect no findings and valid XML.
-- [ ] Run the full Plating test suite through Brigade; expect all tests to pass.
-- [ ] Commit with `docs: document reusable workflow diagrams`.
+- [x] Add a concrete 3-stage example spec using only the documented contract.
+- [x] Render it with `/usr/bin/env PYTHONPATH=src python3 -m plating.cli workflow examples/workflow.json`; expect `examples/workflow.svg`.
+- [x] Add the workflow use case, CLI syntax, JSON example, and embedded SVG to the README.
+- [x] Run the prose leak/style scan and XML parse check; expect no findings and valid XML.
+- [x] Run the full Plating test suite through Brigade; expect all tests to pass.
+- [x] Commit with `docs: document reusable workflow diagrams`.
 
 ### Task 4: GraphTrail pilot
 
