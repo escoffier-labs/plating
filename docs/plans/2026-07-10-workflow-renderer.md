@@ -25,12 +25,12 @@ Execute each task in order and tick every checkbox after its command produces th
 - Create: `tests/test_workflow.py`
 - Create: `src/plating/workflow.py`
 
-- [ ] Write tests that call `render_workflow` with a 3-column document, parse the SVG as XML, assert its title, description, nodes, edge label, escaped content, and byte-identical second render.
-- [ ] Write tests that assert `WorkflowError` for an edge referencing an unknown ID, a duplicate node ID, an empty column, and a non-hex accent.
-- [ ] Run `/usr/bin/env PYTHONPATH=src pytest -q tests/test_workflow.py`; expect collection to fail because `plating.workflow` does not exist.
-- [ ] Implement `WorkflowError`, `validate_workflow`, and `render_workflow`. Use a fixed 960 by 540 canvas, equal-width columns, stacked nodes, cubic connectors, and one optional bottom context band.
-- [ ] Re-run `/usr/bin/env PYTHONPATH=src pytest -q tests/test_workflow.py`; expect all renderer tests to pass.
-- [ ] Commit with `feat: add deterministic workflow SVG renderer`.
+- [x] Write tests that call `render_workflow` with a 3-column document, parse the SVG as XML, assert its title, description, nodes, edge label, escaped content, and byte-identical second render.
+- [x] Write tests that assert `WorkflowError` for an edge referencing an unknown ID, a duplicate node ID, an empty column, and a non-hex accent.
+- [x] Run `/usr/bin/env PYTHONPATH=src pytest -q tests/test_workflow.py`; expect collection to fail because `plating.workflow` does not exist.
+- [x] Implement `WorkflowError`, `validate_workflow`, and `render_workflow`. Use a fixed 960 by 540 canvas, equal-width columns, stacked nodes, cubic connectors, and one optional bottom context band.
+- [x] Re-run `/usr/bin/env PYTHONPATH=src pytest -q tests/test_workflow.py`; expect all renderer tests to pass.
+- [x] Commit with `feat: add deterministic workflow SVG renderer`.
 
 ### Task 2: CLI command
 
