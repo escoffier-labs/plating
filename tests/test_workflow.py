@@ -3,6 +3,7 @@ import xml.etree.ElementTree as ET
 
 import pytest
 
+from plating.cli import main
 from plating.workflow import WorkflowError, render_workflow
 
 
@@ -88,3 +89,15 @@ def test_render_workflow_rejects_invalid_specs(mutate, message):
 
     with pytest.raises(WorkflowError, match=message):
         render_workflow(data)
+
+
+def test_workflow_command_writes_svg_beside_spec(tmp_path, capsys):
+    source = tmp_path / "pipeline.json"
+    source.write_text(json.dumps(_spec()))
+
+    assert main(["workflow", str(source)]) == 0
+
+    output = tmp_path / "pipeline.svg"
+    assert output.exists()
+    assert output.read_text() == render_workflow(_spec())
+    assert capsys.readouterr().out == f"plating: wrote {output}\n"

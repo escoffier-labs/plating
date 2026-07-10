@@ -38,11 +38,11 @@ Execute each task in order and tick every checkbox after its command produces th
 - Modify: `src/plating/cli.py`
 - Modify: `tests/test_workflow.py`
 
-- [ ] Add a CLI test that writes a source JSON file, calls `main(["workflow", source])`, and asserts the default sibling SVG and success message.
-- [ ] Run the focused test; expect failure because `workflow` is not a registered command.
-- [ ] Add `_workflow`, register `plating workflow SPEC --out PATH`, catch JSON and workflow validation errors, and return exit code 2 without a traceback.
-- [ ] Re-run the focused test and full workflow test file; expect all tests to pass.
-- [ ] Commit with `feat: expose workflow renderer in CLI`.
+- [x] Add a CLI test that writes a source JSON file, calls `main(["workflow", source])`, and asserts the default sibling SVG and success message.
+- [x] Run the focused test; expect failure because `workflow` is not a registered command.
+- [x] Add `_workflow`, register `plating workflow SPEC --out PATH`, catch JSON and workflow validation errors, and return exit code 2 without a traceback.
+- [x] Re-run the focused test and full workflow test file; expect all tests to pass.
+- [x] Commit with `feat: expose workflow renderer in CLI`.
 
 ### Task 3: Plating example and docs
 
