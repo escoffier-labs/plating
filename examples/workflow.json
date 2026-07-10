@@ -3,7 +3,6 @@
   "eyebrow": "PLATING WORKFLOW",
   "description": "One source file produces a repeatable artifact with a leak check in the path.",
   "meta": "JSON source · deterministic SVG",
-  "accent": "#E0A45C",
   "columns": [
     {
       "title": "CAPTURE",
