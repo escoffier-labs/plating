@@ -9,11 +9,11 @@
 </p>
 
 <p align="center">
-  <strong>README terminal demos without recording leaks.</strong>
+  <strong>Reproducible terminal demos and workflow diagrams for READMEs.</strong>
 </p>
 
 <p align="center">
-  Turn a small JSON spec plus captured command output into a reproducible, sanitized animated SVG. Leak scan refuses home paths and hostnames. No runtime JavaScript in the embed.
+  Build animated terminal demos from captured output or static workflow diagrams from JSON. Generated SVGs embed directly in GitHub with no browser runtime.
 </p>
 
 <p align="center">
@@ -41,6 +41,7 @@ plating render examples/plating-demo.json
 | **Spec** | JSON steps + outputs | Commands stay honest; animation is synthesized |
 | **Scan** | Refuse identity leaks | Home paths, username, hostname, private IPs |
 | **Render** | Animated SVG embed | GitHub README and sites as a plain img |
+| **Diagram** | Lay out a workflow from JSON | Matching static SVGs across repositories |
 | **Verify** | Drift detection | Re-run specs when CLI output changes |
 
 <p align="center">
@@ -74,6 +75,39 @@ plating render quickstart.json
 
 Then embed `quickstart.svg` in your README or drop it into a site.
 
+## Workflow diagrams
+
+`plating workflow` renders a constrained JSON document into the shared Escoffier Labs workflow style. Authors name columns, nodes, and connections. Plating owns the canvas, spacing, typography, colors, arrows, and accessible SVG metadata.
+
+```json
+{
+  "title": "Source to release",
+  "eyebrow": "BUILD WORKFLOW",
+  "description": "Tracked source passes through verification before release.",
+  "accent": "#E0A45C",
+  "columns": [
+    {"title": "INPUT", "nodes": [{"id": "source", "label": "source"}]},
+    {"title": "CHECK", "nodes": [{"id": "test", "label": "tests", "kind": "focus"}]},
+    {"title": "OUTPUT", "nodes": [{"id": "release", "label": "release", "kind": "success"}]}
+  ],
+  "edges": [
+    {"from": "source", "to": "test"},
+    {"from": "test", "to": "release", "label": "pass"}
+  ]
+}
+```
+
+```bash
+plating workflow examples/workflow.json
+# plating: wrote examples/workflow.svg
+```
+
+Commit the JSON source and generated SVG together. Re-running the command with the same source produces the same bytes.
+
+<p align="center">
+  <img src="examples/workflow.svg" alt="Plating workflow: captured output and JSON pass through an identity scan and SVG renderer to produce a checked-in README image" width="900">
+</p>
+
 ## Where each step's output comes from
 
 In priority order:
@@ -92,13 +126,11 @@ Live capture (`--run`) is convenient; committing captured output is what makes i
 
 ## Sanitization
 
-Before rendering, plating scans the recording for `/home/...` and `/Users/...` paths, the machine's current username and hostname, and private IPs. If it finds one it refuses to render and tells you how to fix it (add a `normalize` rule, or pass `--allow-leaks`). You can also point the scan at a Content Guard policy JSON so demo recordings share the same fleet denylist:
+Before rendering, plating scans the recording for `/home/...` and `/Users/...` paths, the machine's current username and hostname, and private IPs. If it finds one it refuses to render and tells you how to fix it with a `normalize` rule or an explicit `--allow-leaks` override.
 
 ```bash
 plating scan some-recording.cast
-plating scan some-recording.cast --policy ../content-guard/policies/public-repo.json
-plating render quickstart.json --scan-policy ../content-guard/policies/public-repo.json
-plating verify quickstart.json --scan-policy ../content-guard/policies/public-repo.json
+plating scan some-recording.cast
 ```
 
 ## Options
@@ -108,9 +140,9 @@ plating verify quickstart.json --scan-policy ../content-guard/policies/public-re
 **CLI:**
 
 ```
-plating render <spec> [--run] [--cwd DIR] [--out-dir DIR] [--png MS] [--allow-leaks] [--scan-policy FILE]
-plating verify <spec> [--cwd DIR] [--allow-leaks] [--scan-policy FILE]
-plating scan <file> [--policy FILE]
+plating render <spec> [--run] [--cwd DIR] [--out-dir DIR] [--png MS] [--allow-leaks]
+plating scan <file>
+plating workflow <spec> [--out FILE]
 ```
 
 `--png MS` writes a static PNG of the frame at MS milliseconds (via headless Chrome), handy for a quick eyeball before you commit the SVG.
