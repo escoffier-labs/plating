@@ -9,3 +9,4 @@ dist/
 .brigade/
 memory/
 *.frame.svg
+.graphtrail/
