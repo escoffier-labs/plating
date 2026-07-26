@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from . import __version__
 from .cast import build_cast
@@ -14,9 +14,47 @@ from .spec import load_spec, options_from_spec, resolve_steps
 from .workflow import WorkflowError, render_workflow
 
 
+class UnsafeTitleError(ValueError):
+    """Raised when a spec title cannot be used as a confined filename stem."""
+
+
+def _validate_stem(title: str) -> str:
+    """Return ``title`` unchanged when it is a safe single-segment filename stem.
+
+    Rejects any title that contains a path separator (either slash direction),
+    an absolute/path-like form, or a traversal (``.``/``..``) segment. The
+    display title value is preserved; we only refuse titles that would escape
+    the output directory when used as a filename stem.
+    """
+    if not isinstance(title, str) or not title:
+        raise UnsafeTitleError("title must be a non-empty filename stem")
+    if "\x00" in title:
+        raise UnsafeTitleError("title must not contain a NUL character")
+    if "/" in title or "\\" in title:
+        raise UnsafeTitleError(
+            f"title {title!r} must not contain '/' or '\\' (would split a path)")
+    # Treat as posix and windows to catch absolute/path-like forms on either OS.
+    windows_path = PureWindowsPath(title)
+    if windows_path.drive or windows_path.anchor:
+        raise UnsafeTitleError(
+            f"title {title!r} must not contain a Windows drive or anchor")
+    for pure in (PurePosixPath(title), windows_path):
+        if pure.is_absolute() or len(pure.parts) != 1:
+            raise UnsafeTitleError(
+                f"title {title!r} must be a single path segment, not a path")
+    if title in (".", "..") or title.startswith(".") and title.lstrip(".") == "":
+        raise UnsafeTitleError(f"title {title!r} is a traversal segment")
+    return title
+
+
 def _render(args) -> int:
     data, base = load_spec(args.spec)
     title = data.get("title", Path(args.spec).stem)
+    try:
+        stem = _validate_stem(title)
+    except UnsafeTitleError as exc:
+        print(f"plating: unsafe title: {exc}", file=sys.stderr)
+        return 2
     out_dir = Path(args.out_dir) if args.out_dir else base
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -24,7 +62,7 @@ def _render(args) -> int:
     opts = options_from_spec(data)
     cast_text = build_cast(steps, opts)
 
-    cast_path = out_dir / f"{title}.cast"
+    cast_path = out_dir / f"{stem}.cast"
     cast_path.write_text(cast_text)
 
     extra = [(name, pat) for name, pat in (data.get("scan_patterns") or [])]
@@ -42,7 +80,7 @@ def _render(args) -> int:
 
     padding = data.get("padding", 14)
     window = data.get("window", True)
-    svg_path = out_dir / f"{title}.svg"
+    svg_path = out_dir / f"{stem}.svg"
     try:
         render_svg(cast_path, svg_path, width=opts.width, height=opts.height,
                    padding=padding, window=window)
@@ -52,11 +90,11 @@ def _render(args) -> int:
     print(f"plating: wrote {svg_path}")
 
     if args.png is not None:
-        frame = out_dir / f"{title}.frame.svg"
+        frame = out_dir / f"{stem}.frame.svg"
         render_svg(cast_path, frame, width=opts.width, height=opts.height,
                    padding=padding, window=window, at=args.png)
         try:
-            png_path = render_png(frame, out_dir / f"{title}.png")
+            png_path = render_png(frame, out_dir / f"{stem}.png")
             print(f"plating: wrote {png_path}")
         except RenderError as exc:
             print(f"plating: png preview skipped: {exc}", file=sys.stderr)
