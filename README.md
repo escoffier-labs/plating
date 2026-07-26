@@ -129,7 +129,6 @@ Before rendering, plating scans the recording for `/home/...` and `/Users/...` p
 
 ```bash
 plating scan some-recording.cast
-plating scan some-recording.cast
 ```
 
 ## Options

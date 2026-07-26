@@ -67,10 +67,10 @@ Execute each task in order and tick every checkbox after its command produces th
 - Replace: `docs/assets/graph-relationships.svg`
 - Modify: `README.md`
 
-- [ ] Add the 2 GraphTrail workflow specs using the Plating contract.
-- [ ] Render both SVGs with the Plating feature branch and parse them as XML.
-- [ ] Re-render both into temporary files and compare bytes with the committed outputs; expect no differences.
-- [ ] Update README alt text and captions to match the generated diagrams.
-- [ ] Run the prose leak/style scan; expect no findings.
-- [ ] Run `cargo test --all-features` through Brigade; expect all tests to pass.
-- [ ] Commit with `docs: standardize workflow diagrams with plating`.
+- [x] Add the 2 GraphTrail workflow specs using the Plating contract.
+- [x] Render both SVGs with the Plating feature branch and parse them as XML.
+- [x] Re-render both into temporary files and compare bytes with the committed outputs; expect no differences.
+- [x] Update README alt text and captions to match the generated diagrams.
+- [x] Run the prose leak/style scan; expect no new findings. The existing documented Code Search fallback remains intentional.
+- [x] Run `cargo test --all-features` through Brigade; expect all tests to pass.
+- [x] Commit with `docs: standardize workflow diagrams with plating`.
