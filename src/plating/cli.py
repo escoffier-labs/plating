@@ -9,7 +9,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from . import __version__
 from .cast import build_cast
 from .render import RenderError, render_png, render_svg
-from .scan import scan
+from .scan import prompt_patterns, scan
 from .spec import load_spec, options_from_spec, resolve_steps
 from .workflow import WorkflowError, render_workflow
 
@@ -60,13 +60,25 @@ def _render(args) -> int:
 
     steps = resolve_steps(data, base, run=args.run, cwd=args.cwd)
     opts = options_from_spec(data)
-    cast_text = build_cast(steps, opts)
+    try:
+        cast_text = build_cast(steps, opts)
+    except ValueError as exc:
+        print(f"plating: {exc}", file=sys.stderr)
+        return 2
 
     cast_path = out_dir / f"{stem}.cast"
-    cast_path.write_text(cast_text)
 
+    # Scan the raw prompt configuration and cwd for identity/path leaks before
+    # any artifact is written. These narrowly prompt-specific patterns are
+    # applied only here (not to the cast scan), so the always-present cast
+    # header ``SHELL=/bin/bash`` cannot false-positive.
+    prompt_ctx = opts.prompt or ""
+    cwd = args.cwd or data.get("cwd") or ""
+    if cwd:
+        prompt_ctx = f"{prompt_ctx}\n{cwd}"
     extra = [(name, pat) for name, pat in (data.get("scan_patterns") or [])]
     findings = scan(cast_text, extra)
+    findings.extend(scan(prompt_ctx, prompt_patterns()))
     if findings:
         print("plating: leak scan found identity in the recording:", file=sys.stderr)
         for name, value in findings:
@@ -77,6 +89,8 @@ def _render(args) -> int:
             return 2
     else:
         print(f"plating: leak scan clean ({cast_path.name})")
+
+    cast_path.write_text(cast_text)
 
     padding = data.get("padding", 14)
     window = data.get("window", True)

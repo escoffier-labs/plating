@@ -32,6 +32,35 @@ class CastOptions:
     final_hold: float = 2.2      # hold on the final frame before the loop restarts
 
 
+# Explicit allowlist of safe, supported SGR parameter strings for ``prompt_color``.
+# The empty string disables coloring. Anything not listed here is refused before
+# it can enter an escape sequence, so a hostile value like ``"31m\x1b]0;...\x07"``
+# (an SGR followed by an OSC payload) cannot inject terminal controls.
+PROMPT_COLOR_ALLOWLIST: frozenset[str] = frozenset({
+    "",       # disabled
+    "0",      # reset
+    "1",      # bold
+    "2",      # dim
+    "3",      # italic
+    "4",      # underline
+    "7",      # reverse
+    "30", "31", "32", "33", "34", "35", "36", "37",
+    "1;30", "1;31", "1;32", "1;33", "1;34", "1;35", "1;36", "1;37",
+    "90", "91", "92", "93", "94", "95", "96", "97",
+})
+
+
+def _validate_prompt_color(value: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError(
+            f"prompt_color must be a string, got {type(value).__name__}")
+    if value not in PROMPT_COLOR_ALLOWLIST:
+        raise ValueError(
+            f"prompt_color {value!r} is not in the safe SGR allowlist; "
+            "use one of the supported values or '' to disable coloring")
+    return value
+
+
 def _prompt_seq(opts: CastOptions) -> str:
     if opts.prompt_color:
         return f"\x1b[{opts.prompt_color}m{opts.prompt}\x1b[0m"
@@ -41,6 +70,7 @@ def _prompt_seq(opts: CastOptions) -> str:
 def build_cast(steps, opts: CastOptions | None = None) -> str:
     """Return an asciicast v2 document (header line + one JSON event per line)."""
     opts = opts or CastOptions()
+    _validate_prompt_color(opts.prompt_color)
     events: list = []
     clock = 0.0
 
