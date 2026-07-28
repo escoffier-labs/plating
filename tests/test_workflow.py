@@ -188,6 +188,33 @@ def test_render_workflow_rejects_whitespace_edge_endpoints_before_lookup():
     assert "edges[2].to" in str(exc_info.value)
 
 
+def test_render_workflow_rejects_backward_edge():
+    """Edges must flow forward from an earlier column to a later column."""
+    data = _spec()
+    data["edges"].append({"from": "release", "to": "source"})
+
+    with pytest.raises(WorkflowError) as exc_info:
+        render_workflow(data)
+
+    message = str(exc_info.value)
+    assert "release -> source" in message
+    assert "forward" in message
+
+
+def test_render_workflow_rejects_same_column_edge():
+    """Edges must advance to a later column; same-column edges are not allowed."""
+    data = _spec()
+    data["columns"][0]["nodes"].append({"id": "extra", "label": "extra"})
+    data["edges"].append({"from": "source", "to": "extra"})
+
+    with pytest.raises(WorkflowError) as exc_info:
+        render_workflow(data)
+
+    message = str(exc_info.value)
+    assert "source -> extra" in message
+    assert "forward" in message
+
+
 @pytest.mark.parametrize(
     ("mutate", "field"),
     [
