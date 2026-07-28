@@ -33,6 +33,25 @@ def default_patterns() -> list[tuple[str, str]]:
     return patterns
 
 
+def prompt_patterns() -> list[tuple[str, str]]:
+    """Narrowly prompt-specific leak patterns.
+
+    These are meant to be applied to the raw prompt/cwd configuration text, not
+    to the rendered cast (the cast header always embeds ``SHELL=/bin/bash``,
+    which a broad "absolute path" rule would false-positive on). They catch an
+    identity-bearing prompt for a different user/host and a non-home absolute
+    cwd before any artifact is written.
+    """
+    return [
+        # user@host identity baked into a prompt (e.g. ``alice@example-host:~$ ``).
+        ("prompt-user-host", r"[A-Za-z][A-Za-z0-9._-]*@[A-Za-z][A-Za-z0-9._-]+"),
+        # An absolute path that is not under /home/ or /Users/ (e.g. ``/etc/secret``).
+        # This runs only against prompt/cwd content, never the cast header.
+        ("prompt-non-home-absolute",
+         r"(?<![A-Za-z0-9._-])/(?!(?:home|Users)(?:/|$))[A-Za-z0-9._/-]+"),
+    ]
+
+
 def scan(text: str, extra: list[tuple[str, str]] | None = None) -> list[tuple[str, str]]:
     """Return a de-duplicated list of (rule_name, matched_text) findings."""
     patterns = default_patterns()

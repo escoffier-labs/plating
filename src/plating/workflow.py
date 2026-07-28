@@ -68,6 +68,7 @@ def validate_workflow(data: dict) -> None:
         raise WorkflowError("columns must contain between 2 and 4 columns")
 
     node_ids: set[str] = set()
+    node_columns: dict[str, int] = {}
     for column_index, column in enumerate(columns):
         if not isinstance(column, dict):
             raise WorkflowError(f"columns[{column_index}] must be an object")
@@ -86,6 +87,7 @@ def validate_workflow(data: dict) -> None:
             if node_id in node_ids:
                 raise WorkflowError(f"duplicate node id: {node_id}")
             node_ids.add(node_id)
+            node_columns[node_id] = column_index
             kind = node.get("kind", "default")
             if not isinstance(kind, str):
                 raise WorkflowError(f"{path}.kind must be a string")
@@ -103,6 +105,11 @@ def validate_workflow(data: dict) -> None:
         if source not in node_ids or target not in node_ids:
             raise WorkflowError(
                 f"edge {source} -> {target} references an unknown node"
+            )
+        if node_columns[target] <= node_columns[source]:
+            raise WorkflowError(
+                f"edge {source} -> {target} must flow forward "
+                f"from an earlier column to a later column"
             )
 
     context = data.get("context")

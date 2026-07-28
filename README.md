@@ -77,7 +77,7 @@ Then embed `quickstart.svg` in your README or drop it into a site.
 
 ## Workflow diagrams
 
-`plating workflow` renders a constrained JSON document into the shared Escoffier Labs workflow style. Authors name columns, nodes, and connections. Plating owns the canvas, spacing, typography, colors, arrows, and accessible SVG metadata.
+`plating workflow` renders a constrained JSON document into the shared Escoffier Labs workflow style. Authors name columns, nodes, and connections; connections are forward-only, running from an earlier column to a later column. Plating owns the canvas, spacing, typography, colors, arrows, and accessible SVG metadata.
 
 ```json
 {
