@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from .cast import build_cast
 from .render import RenderError, render_png, render_svg
 from .scan import scan
 from .spec import load_spec, options_from_spec, resolve_steps
+from .workflow import WorkflowError, render_workflow
 
 
 def _render(args) -> int:
@@ -73,6 +75,21 @@ def _scan(args) -> int:
     return 0
 
 
+def _workflow(args) -> int:
+    source = Path(args.spec)
+    output = Path(args.out) if args.out else source.with_suffix(".svg")
+    try:
+        data, _ = load_spec(source)
+        svg = render_workflow(data)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(svg)
+    except (OSError, json.JSONDecodeError, WorkflowError) as exc:
+        print(f"plating: {exc}", file=sys.stderr)
+        return 2
+    print(f"plating: wrote {output}")
+    return 0
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         prog="plating",
@@ -95,6 +112,13 @@ def main(argv=None) -> int:
     scan_cmd = sub.add_parser("scan", help="leak-scan a file for identity and paths")
     scan_cmd.add_argument("file")
     scan_cmd.set_defaults(func=_scan)
+
+    workflow = sub.add_parser(
+        "workflow", help="render a JSON workflow spec to a static SVG"
+    )
+    workflow.add_argument("spec", help="path to a JSON workflow spec")
+    workflow.add_argument("--out", help="output SVG path (default: beside the spec)")
+    workflow.set_defaults(func=_workflow)
 
     args = parser.parse_args(argv)
     return args.func(args)
