@@ -103,6 +103,8 @@ plating workflow examples/workflow.json
 
 Commit the JSON source and generated SVG together. Re-running the command with the same source produces the same bytes.
 
+`plating workflow` runs a leak scan before writing. It scans the parsed input strings and the rendered SVG, prints each finding once, and exits 2 without writing the SVG or creating its parent directory. The `scan_patterns` key only adds rules to the default set.
+
 <p align="center">
   <img src="examples/workflow.svg" alt="Plating workflow: captured output and JSON pass through an identity scan and SVG renderer to produce a checked-in README image" width="900">
 </p>
