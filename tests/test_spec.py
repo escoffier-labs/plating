@@ -225,6 +225,44 @@ def test_output_file_rejected_without_stable_open_capability(tmp_path, monkeypat
         resolve_steps(data, tmp_path)
 
 
+def test_output_file_rejected_when_os_open_not_in_supports_dir_fd(
+    tmp_path, monkeypatch,
+):
+    (tmp_path / "out.txt").write_text("hello\n")
+    monkeypatch.setattr(
+        spec_module.os,
+        "supports_dir_fd",
+        frozenset({spec_module.os.stat}),
+    )
+    monkeypatch.setattr(spec_module, "_SUPPORTS_POSIX_DIRFD", False)
+    data = {"steps": [{"command": "x", "output_file": "out.txt"}]}
+    with pytest.raises(SpecError, match="output_file.*safely on this platform"):
+        resolve_steps(data, tmp_path)
+
+
+def test_open_at_typeerror_wrapped_as_spec_error(tmp_path, monkeypatch):
+    if not spec_module._SUPPORTS_POSIX_DIRFD:
+        pytest.skip("requires POSIX dirfd support")
+
+    root_fd = os.open(str(tmp_path), os.O_RDONLY | spec_module._O_DIRECTORY)
+    real_open = spec_module.os.open
+
+    def bad_open(path, flags, *, dir_fd=-1):
+        if dir_fd != -1:
+            raise TypeError("dir_fd not supported in this build")
+        return real_open(path, flags)
+
+    monkeypatch.setattr(spec_module.os, "open", bad_open)
+    with pytest.raises(SpecError, match="output_file"):
+        spec_module._open_at(
+            root_fd,
+            ("missing.txt",),
+            label="output_file",
+            leaf_is_dir=False,
+        )
+    os.close(root_fd)
+
+
 def test_output_file_literal_backslash_filename(tmp_path):
     if not spec_module._SUPPORTS_POSIX_DIRFD:
         pytest.skip("requires POSIX dirfd support")
@@ -243,6 +281,86 @@ def test_output_file_windows_style_prefix_filename(tmp_path):
     data = {"steps": [{"command": "x", "output_file": name}]}
     steps = resolve_steps(data, tmp_path)
     assert steps[0].output == "literal\n"
+
+
+def test_output_file_ignores_base_path_swap_after_fd_open(tmp_path, monkeypatch):
+    """After the spec-base fd is opened, swapping the path must not change output."""
+    if not spec_module._SUPPORTS_POSIX_DIRFD:
+        pytest.skip("requires POSIX dirfd support")
+
+    (tmp_path / "out.txt").write_text("original\n")
+    swapped = tmp_path.parent / f"{tmp_path.name}-swapped"
+    swapped.mkdir()
+    (swapped / "out.txt").write_text("swapped\n")
+
+    original_path_parts = spec_module._path_parts
+    swapped_done = False
+
+    def hooked_path_parts(value, *, label):
+        nonlocal swapped_done
+        if label == "output_file" and not swapped_done:
+            swapped_done = True
+            backup = tmp_path.parent / f"{tmp_path.name}-backup"
+            tmp_path.rename(backup)
+            swapped.rename(tmp_path)
+        return original_path_parts(value, label=label)
+
+    monkeypatch.setattr(spec_module, "_path_parts", hooked_path_parts)
+    data = {"steps": [{"command": "x", "output_file": "out.txt"}]}
+    steps = resolve_steps(data, tmp_path)
+    assert steps[0].output == "original\n"
+
+
+def test_spec_cwd_ignores_base_path_swap_after_fd_open(tmp_path, monkeypatch):
+    """After the spec-base fd is opened, swapping the path must not change live cwd."""
+    if not spec_module._SUPPORTS_POSIX_DIRFD:
+        pytest.skip("requires POSIX dirfd support")
+
+    work = tmp_path / "work"
+    work.mkdir()
+    (work / "marker.txt").write_text("original\n")
+    swapped = tmp_path.parent / f"{tmp_path.name}-swapped"
+    swapped.mkdir()
+    swapped_work = swapped / "work"
+    swapped_work.mkdir()
+    (swapped_work / "marker.txt").write_text("swapped\n")
+
+    original_path_parts = spec_module._path_parts
+    swapped_done = False
+
+    def hooked_path_parts(value, *, label):
+        nonlocal swapped_done
+        if label == "cwd" and not swapped_done:
+            swapped_done = True
+            backup = tmp_path.parent / f"{tmp_path.name}-backup"
+            tmp_path.rename(backup)
+            swapped.rename(tmp_path)
+        return original_path_parts(value, label=label)
+
+    monkeypatch.setattr(spec_module, "_path_parts", hooked_path_parts)
+    data = {
+        "cwd": "work",
+        "steps": [{
+            "command": [sys.executable, "-c",
+                        "import pathlib; print(pathlib.Path('marker.txt').read_text(), end='')"],
+            "run": True,
+        }],
+    }
+    steps = resolve_steps(data, tmp_path)
+    assert steps[0].output == "original\n"
+
+
+def test_spec_base_symlink_rejected_fail_closed(tmp_path):
+    if not spec_module._SUPPORTS_POSIX_DIRFD:
+        pytest.skip("requires POSIX dirfd support")
+    real = tmp_path / "real"
+    real.mkdir()
+    (real / "out.txt").write_text("hello\n")
+    link = tmp_path / "link"
+    link.symlink_to(real)
+    data = {"steps": [{"command": "x", "output_file": "out.txt"}]}
+    with pytest.raises(SpecError, match="spec base"):
+        resolve_steps(data, link)
 
 
 def test_open_at_closes_intermediate_fds_on_failure_without_closing_root(
@@ -495,6 +613,28 @@ def test_spec_cwd_rejected_without_stable_open_capability(tmp_path, monkeypatch)
         resolve_steps(data, tmp_path)
 
 
+def test_live_run_default_cwd_rejected_without_stable_open_capability(
+    tmp_path, monkeypatch,
+):
+    called = False
+
+    class FakeProc:
+        stdout = ""
+        stderr = ""
+
+    def fake_run(cmd, **kwargs):
+        nonlocal called
+        called = True
+        return FakeProc()
+
+    monkeypatch.setattr("plating.spec.subprocess.run", fake_run)
+    monkeypatch.setattr(spec_module, "_SUPPORTS_POSIX_DIRFD", False)
+    data = {"steps": [{"command": "pwd", "run": True}]}
+    with pytest.raises(SpecError, match="stable directory descriptor"):
+        resolve_steps(data, tmp_path)
+    assert called is False
+
+
 def test_spec_cwd_real_process_boundary(tmp_path):
     sub = tmp_path / "work"
     sub.mkdir()
@@ -626,7 +766,7 @@ def test_cli_cwd_missing_directory_rejected(tmp_path):
         "title": "demo",
         "width": 40,
         "height": 4,
-        "steps": [{"command": "pwd", "run": True, "output": "ran\n"}],
+        "steps": [{"command": "pwd", "run": True}],
     }
     spec_path = tmp_path / "spec.json"
     spec_path.write_text(json.dumps(spec))
@@ -772,6 +912,170 @@ def test_live_run_cli_timeout_expired_at_process_boundary(tmp_path, monkeypatch,
     assert "timeout" in captured.err.lower()
     assert "Traceback" not in captured.err
     assert not (out / "demo.cast").exists()
+
+
+def test_captured_output_skips_invalid_global_timeout(tmp_path, monkeypatch):
+    called = False
+
+    def fake_run(*args, **kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("subprocess must not run")
+
+    monkeypatch.setattr("plating.spec.subprocess.run", fake_run)
+    data = {
+        "run_timeout": 0,
+        "steps": [{"command": "ls", "output": "ok\n", "run": True}],
+    }
+    steps = resolve_steps(data, tmp_path, run=True)
+    assert steps[0].output == "ok\n"
+    assert called is False
+
+
+def test_captured_literal_output_skips_invalid_cwd(tmp_path, monkeypatch):
+    called = False
+
+    def fake_run(*args, **kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("subprocess must not run")
+
+    monkeypatch.setattr("plating.spec.subprocess.run", fake_run)
+    data = {
+        "cwd": "missing",
+        "steps": [{"command": "ls", "output": "ok\n"}],
+    }
+    steps = resolve_steps(data, tmp_path)
+    assert steps[0].output == "ok\n"
+    assert called is False
+
+
+def test_cwd_from_dir_fd_closes_owned_fd_when_descriptor_unavailable(
+    tmp_path, monkeypatch,
+):
+    if not spec_module._SUPPORTS_POSIX_DIRFD:
+        pytest.skip("requires POSIX dirfd support")
+
+    fd = os.open(str(tmp_path), os.O_RDONLY | spec_module._O_DIRECTORY)
+    closed: list[int] = []
+    real_close = spec_module.os.close
+
+    def tracking_close(handle):
+        closed.append(handle)
+        return real_close(handle)
+
+    monkeypatch.setattr(spec_module.os, "close", tracking_close)
+    monkeypatch.setattr(spec_module, "_proc_fd_path", lambda _fd: None)
+
+    stable_cwd = spec_module._cwd_from_dir_fd(
+        fd,
+        fallback_path=str(tmp_path),
+        require_descriptor=False,
+        owns_fd=True,
+    )
+    assert stable_cwd.cwd == str(tmp_path)
+    assert stable_cwd._fd is None
+    assert fd in closed
+
+
+def test_captured_literal_output_skips_output_file_without_stable_base(
+    tmp_path, monkeypatch,
+):
+    """Literal output wins over output_file; no base fd or subprocess needed."""
+    (tmp_path / "out.txt").write_text("from-file\n")
+    called_run = False
+    opened_base = False
+
+    def fake_run(*args, **kwargs):
+        nonlocal called_run
+        called_run = True
+        raise AssertionError("subprocess must not run")
+
+    real_open = spec_module.os.open
+
+    def tracking_open(path, flags, *, dir_fd=-1):
+        nonlocal opened_base
+        if (
+            dir_fd == -1
+            and spec_module._O_DIRECTORY
+            and (flags & spec_module._O_DIRECTORY)
+        ):
+            opened_base = True
+            raise OSError(13, "Permission denied")
+        return real_open(path, flags, dir_fd=dir_fd)
+
+    monkeypatch.setattr("plating.spec.subprocess.run", fake_run)
+    monkeypatch.setattr(spec_module, "_SUPPORTS_POSIX_DIRFD", False)
+    monkeypatch.setattr(spec_module.os, "open", tracking_open)
+
+    data = {
+        "steps": [{
+            "command": "ls",
+            "output": "literal\n",
+            "output_file": "out.txt",
+            "run": True,
+        }],
+    }
+    steps = resolve_steps(data, tmp_path, run=True)
+    assert steps[0].output == "literal\n"
+    assert called_run is False
+    assert opened_base is False
+
+
+def test_captured_output_file_skips_invalid_cwd(tmp_path, monkeypatch):
+    (tmp_path / "out.txt").write_text("captured\n")
+    called = False
+
+    def fake_run(*args, **kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("subprocess must not run")
+
+    monkeypatch.setattr("plating.spec.subprocess.run", fake_run)
+    data = {
+        "cwd": "missing",
+        "steps": [{"command": "ls", "output_file": "out.txt", "run": True}],
+    }
+    steps = resolve_steps(data, tmp_path, run=True)
+    assert steps[0].output == "captured\n"
+    assert called is False
+
+
+def test_captured_output_skips_invalid_timeout_with_global_run(tmp_path, monkeypatch):
+    called = False
+
+    def fake_run(*args, **kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("subprocess must not run")
+
+    monkeypatch.setattr("plating.spec.subprocess.run", fake_run)
+    data = {
+        "run_timeout": -1,
+        "steps": [{"command": "ls", "output": "ok\n"}],
+    }
+    steps = resolve_steps(data, tmp_path, run=True)
+    assert steps[0].output == "ok\n"
+    assert called is False
+
+
+def test_captured_output_file_skips_invalid_timeout(tmp_path, monkeypatch):
+    (tmp_path / "out.txt").write_text("captured\n")
+    called = False
+
+    def fake_run(*args, **kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("subprocess must not run")
+
+    monkeypatch.setattr("plating.spec.subprocess.run", fake_run)
+    data = {
+        "run_timeout": 0,
+        "steps": [{"command": "ls", "output_file": "out.txt", "run": True}],
+    }
+    steps = resolve_steps(data, tmp_path, run=True)
+    assert steps[0].output == "captured\n"
+    assert called is False
 
 
 def test_live_run_invalid_timeout_rejected(tmp_path):

@@ -48,6 +48,8 @@ _SUPPORTS_POSIX_DIRFD = (
     and hasattr(os, "open")
     and bool(_O_DIRECTORY)
     and bool(_O_NOFOLLOW)
+    and getattr(os, "supports_dir_fd", None) is not None
+    and os.open in os.supports_dir_fd
 )
 _WINDOWS_COMMAND_PATH = re.compile(r'(?:^|[\s"])(?:[A-Za-z]:\\|\\\\)')
 
@@ -56,19 +58,38 @@ class SpecError(ValueError):
     """Raised when a demo spec cannot be safely resolved or executed."""
 
 
-class _StableCwd:
-    """Hold an optional open directory fd used as a stable subprocess cwd."""
+class _StableBase:
+    """Hold an open spec-base directory fd for confined relative lookups."""
 
-    __slots__ = ("cwd", "_fd")
+    __slots__ = ("_fd")
 
-    def __init__(self, cwd: str, fd: int | None) -> None:
-        self.cwd = cwd
+    def __init__(self, fd: int) -> None:
         self._fd = fd
+
+    @property
+    def fd(self) -> int:
+        return self._fd
 
     def close(self) -> None:
         if self._fd is not None:
             os.close(self._fd)
             self._fd = None
+
+
+class _StableCwd:
+    """Hold an optional open directory fd used as a stable subprocess cwd."""
+
+    __slots__ = ("cwd", "_fd", "_owns_fd")
+
+    def __init__(self, cwd: str, fd: int | None, *, owns_fd: bool = True) -> None:
+        self.cwd = cwd
+        self._fd = fd
+        self._owns_fd = owns_fd
+
+    def close(self) -> None:
+        if self._owns_fd and self._fd is not None:
+            os.close(self._fd)
+        self._fd = None
 
 
 def load_spec(path):
@@ -162,6 +183,12 @@ def _open_at(
             flags |= _O_NOFOLLOW
         try:
             next_fd = os.open(part, flags, dir_fd=current_fd)
+        except TypeError as exc:
+            if current_fd != dir_fd:
+                os.close(current_fd)
+            raise SpecError(
+                f"cannot open {label} {part!r}: {exc}"
+            ) from None
         except OSError as exc:
             if current_fd != dir_fd:
                 os.close(current_fd)
@@ -174,23 +201,26 @@ def _open_at(
     return current_fd
 
 
-def _read_confined_text_posix(
-    base: Path,
+def _open_spec_base(base: Path) -> _StableBase:
+    try:
+        fd = os.open(str(base), os.O_RDONLY | _O_DIRECTORY | _O_NOFOLLOW)
+    except OSError as exc:
+        raise SpecError(
+            f"cannot open spec base: {_os_error_reason(exc)}"
+        ) from None
+    return _StableBase(fd)
+
+
+def _read_confined_text_at(
+    stable_base: _StableBase,
     relative: str,
     parts: tuple[str, ...],
     *,
     label: str,
 ) -> str:
-    base_fd: int | None = None
     file_fd: int | None = None
     try:
-        try:
-            base_fd = os.open(str(_safe_resolve(base)), os.O_RDONLY | _O_DIRECTORY)
-        except OSError as exc:
-            raise SpecError(
-                f"cannot open spec base for {label}: {_os_error_reason(exc)}"
-            ) from None
-        file_fd = _open_at(base_fd, parts, label=label, leaf_is_dir=False)
+        file_fd = _open_at(stable_base.fd, parts, label=label, leaf_is_dir=False)
         st = os.fstat(file_fd)
         if stat.S_ISDIR(st.st_mode):
             raise SpecError(f"{label} {relative!r} is a directory")
@@ -208,18 +238,34 @@ def _read_confined_text_posix(
     finally:
         if file_fd is not None:
             os.close(file_fd)
-        if base_fd is not None:
-            os.close(base_fd)
 
 
-def _read_confined_text(base: Path, relative: str, *, label: str) -> str:
+def _read_confined_text(stable_base: _StableBase, relative: str, *, label: str) -> str:
     parts = _path_parts(relative, label=label)
-    _confine_path(base, relative, label=label)
 
     if not _SUPPORTS_POSIX_DIRFD:
         raise SpecError(
             f"cannot read {label} {relative!r} safely on this platform")
-    return _read_confined_text_posix(base, relative, parts, label=label)
+    return _read_confined_text_at(stable_base, relative, parts, label=label)
+
+
+def _cwd_from_dir_fd(
+    dir_fd: int,
+    *,
+    fallback_path: str,
+    require_descriptor: bool = False,
+    owns_fd: bool = False,
+) -> _StableCwd:
+    proc_path = _proc_fd_path(dir_fd)
+    if proc_path is None:
+        if owns_fd:
+            os.close(dir_fd)
+        if require_descriptor:
+            raise SpecError(
+                "spec-declared cwd cannot be passed through a stable directory "
+                "descriptor on this platform")
+        return _StableCwd(fallback_path, None, owns_fd=False)
+    return _StableCwd(proc_path, dir_fd if owns_fd else None, owns_fd=owns_fd)
 
 
 def _open_stable_cwd(path: Path, *, require_descriptor: bool = False) -> _StableCwd:
@@ -236,42 +282,33 @@ def _open_stable_cwd(path: Path, *, require_descriptor: bool = False) -> _Stable
     except OSError as exc:
         raise SpecError(
             f"cwd cannot be opened safely: {_os_error_reason(exc)}") from None
-    proc_path = _proc_fd_path(fd)
-    if proc_path is None:
-        os.close(fd)
-        if require_descriptor:
-            raise SpecError(
-                "spec-declared cwd cannot be passed through a stable directory "
-                "descriptor on this platform")
-        return _StableCwd(str(resolved), None)
-    return _StableCwd(proc_path, fd)
+    return _cwd_from_dir_fd(
+        fd,
+        fallback_path=str(resolved),
+        require_descriptor=require_descriptor,
+        owns_fd=True,
+    )
 
 
-def _open_confined_cwd(base: Path, relative: str) -> _StableCwd:
+def _open_confined_cwd(stable_base: _StableBase, relative: str) -> _StableCwd:
     parts = _path_parts(relative, label="cwd")
-    _confine_path(base, relative, label="cwd")
 
     if not _SUPPORTS_POSIX_DIRFD:
         raise SpecError(
             "spec-declared cwd cannot be opened with a stable directory "
             "descriptor on this platform")
 
-    base_fd: int | None = None
     cwd_fd: int | None = None
-    proc_path: str | None = None
     try:
-        try:
-            base_fd = os.open(str(_safe_resolve(base)), os.O_RDONLY | _O_DIRECTORY)
-        except OSError as exc:
-            raise SpecError(
-                f"cannot open spec base for cwd: {_os_error_reason(exc)}"
-            ) from None
-        cwd_fd = _open_at(base_fd, parts, label="cwd", leaf_is_dir=True)
-        proc_path = _proc_fd_path(cwd_fd)
-        if proc_path is None:
-            raise SpecError(
-                "spec-declared cwd cannot be passed through a stable directory "
-                "descriptor on this platform")
+        cwd_fd = _open_at(stable_base.fd, parts, label="cwd", leaf_is_dir=True)
+        owned_fd = cwd_fd
+        cwd_fd = None
+        return _cwd_from_dir_fd(
+            owned_fd,
+            fallback_path=relative,
+            require_descriptor=True,
+            owns_fd=True,
+        )
     except SpecError:
         if cwd_fd is not None:
             os.close(cwd_fd)
@@ -281,14 +318,15 @@ def _open_confined_cwd(base: Path, relative: str) -> _StableCwd:
             os.close(cwd_fd)
         raise SpecError(
             f"cannot open cwd {relative!r}: {_os_error_reason(exc)}") from None
-    finally:
-        if base_fd is not None:
-            os.close(base_fd)
-
-    return _StableCwd(proc_path, cwd_fd)
 
 
-def _prepare_run_cwd(data, base: Path, *, cli_cwd) -> _StableCwd:
+def _prepare_run_cwd(
+    data,
+    stable_base: _StableBase | None,
+    base: Path,
+    *,
+    cli_cwd,
+) -> _StableCwd:
     """Return a cwd handle for live runs.
 
     Spec-declared ``cwd`` values must be passed through an open directory
@@ -302,8 +340,19 @@ def _prepare_run_cwd(data, base: Path, *, cli_cwd) -> _StableCwd:
         return _open_stable_cwd(cwd, require_descriptor=False)
     declared = data.get("cwd")
     if declared is None:
-        return _open_stable_cwd(base, require_descriptor=False)
-    return _open_confined_cwd(base, declared)
+        if stable_base is not None:
+            return _cwd_from_dir_fd(
+                stable_base.fd,
+                fallback_path=str(base),
+                require_descriptor=True,
+                owns_fd=False,
+            )
+        raise SpecError(
+            "default spec-base cwd cannot be opened with a stable directory "
+            "descriptor on this platform")
+    if stable_base is None:
+        raise SpecError("internal error: missing spec base for confined cwd")
+    return _open_confined_cwd(stable_base, declared)
 
 
 def _build_env() -> dict[str, str]:
@@ -381,24 +430,86 @@ def _parse_command(command, *, label: str) -> list[str]:
     return argv
 
 
+def _step_is_captured(raw: dict) -> bool:
+    return "output" in raw or "output_file" in raw
+
+
+def _step_is_live(raw: dict, *, run: bool) -> bool:
+    return not _step_is_captured(raw) and bool(raw.get("run") or run)
+
+
+def _step_needs_output_file(raw: dict) -> bool:
+    return "output_file" in raw and "output" not in raw
+
+
+def _needs_stable_base(
+    steps: list,
+    *,
+    cli_cwd,
+    needs_live: bool,
+) -> bool:
+    if any(
+        isinstance(raw, dict) and _step_needs_output_file(raw)
+        for raw in steps
+    ):
+        return True
+    if needs_live and cli_cwd is None:
+        return True
+    return False
+
+
 def resolve_steps(data, base_dir, *, run=False, cwd=None, timeout=None) -> list[Step]:
     rules = data.get("normalize", [])
     base = Path(base_dir)
-    will_run = run or any(raw.get("run") for raw in data.get("steps", []) if isinstance(raw, dict))
-    run_timeout = _resolve_timeout(data, cli_timeout=timeout) if will_run else None
-    env = _build_env() if will_run else None
-    stable_cwd = _prepare_run_cwd(data, base, cli_cwd=cwd) if will_run else None
+    steps_raw = data["steps"]
+    needs_live = any(
+        _step_is_live(raw, run=run)
+        for raw in steps_raw
+        if isinstance(raw, dict)
+    )
+    needs_base_fd = _needs_stable_base(
+        steps_raw, cli_cwd=cwd, needs_live=needs_live,
+    )
+
+    stable_base: _StableBase | None = None
+    if needs_base_fd:
+        if not _SUPPORTS_POSIX_DIRFD:
+            if any(
+                isinstance(raw, dict) and _step_needs_output_file(raw)
+                for raw in steps_raw
+            ):
+                raise SpecError(
+                    "cannot read output_file safely on this platform")
+            if data.get("cwd") is not None:
+                raise SpecError(
+                    "spec-declared cwd cannot be opened with a stable directory "
+                    "descriptor on this platform")
+            if needs_live and cwd is None:
+                raise SpecError(
+                    "default spec-base cwd cannot be opened with a stable directory "
+                    "descriptor on this platform")
+        else:
+            stable_base = _open_spec_base(base)
+
+    run_timeout = _resolve_timeout(data, cli_timeout=timeout) if needs_live else None
+    env = _build_env() if needs_live else None
+    stable_cwd = (
+        _prepare_run_cwd(data, stable_base, base, cli_cwd=cwd)
+        if needs_live else None
+    )
     steps: list[Step] = []
     try:
-        for raw in data["steps"]:
+        for raw in steps_raw:
             command = raw["command"]
             display_command = _command_display(command, label="command")
             if "output" in raw:
                 output = raw["output"]
             elif "output_file" in raw:
+                if stable_base is None:
+                    raise SpecError("internal error: missing spec base for output_file")
                 output = _read_confined_text(
-                    base, raw["output_file"], label="output_file")
-            elif raw.get("run") or run:
+                    stable_base, raw["output_file"], label="output_file")
+            elif _step_is_live(raw, run=run):
                 argv = _parse_command(command, label="command")
                 if stable_cwd is None:
                     raise SpecError("internal error: missing cwd for live run")
@@ -429,4 +540,6 @@ def resolve_steps(data, base_dir, *, run=False, cwd=None, timeout=None) -> list[
     finally:
         if stable_cwd is not None:
             stable_cwd.close()
+        if stable_base is not None:
+            stable_base.close()
     return steps
