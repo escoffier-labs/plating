@@ -10,8 +10,8 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from . import __version__
 from .cast import build_cast
 from .render import RenderError, render_png, render_svg
-from .scan import prompt_patterns, scan
-from .spec import load_spec, options_from_spec, resolve_steps
+from .scan import prompt_patterns, scan, scan_secrets
+from .spec import SpecError, load_spec, options_from_spec, resolve_steps
 from .workflow import WorkflowError, render_workflow
 
 
@@ -59,7 +59,12 @@ def _render(args) -> int:
     out_dir = Path(args.out_dir) if args.out_dir else base
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    steps = resolve_steps(data, base, run=args.run, cwd=args.cwd)
+    try:
+        steps = resolve_steps(data, base, run=args.run, cwd=args.cwd,
+                              timeout=args.timeout)
+    except SpecError as exc:
+        print(f"plating: {exc}", file=sys.stderr)
+        return 2
     opts = options_from_spec(data)
     try:
         cast_text = build_cast(steps, opts)
@@ -79,9 +84,11 @@ def _render(args) -> int:
         prompt_ctx = f"{prompt_ctx}\n{cwd}"
     extra = [(name, pat) for name, pat in (data.get("scan_patterns") or [])]
     findings = scan(cast_text, extra)
+    findings.extend(scan_secrets(cast_text))
     findings.extend(scan(prompt_ctx, prompt_patterns()))
     if findings:
-        print("plating: leak scan found identity in the recording:", file=sys.stderr)
+        print("plating: leak scan found sensitive content in the recording:",
+              file=sys.stderr)
         for name, value in findings:
             print(f"  - {name}: {value}", file=sys.stderr)
         if not args.allow_leaks:
@@ -119,7 +126,9 @@ def _render(args) -> int:
 
 
 def _scan(args) -> int:
-    findings = scan(Path(args.file).read_text())
+    text = Path(args.file).read_text()
+    findings = scan(text)
+    findings.extend(scan_secrets(text))
     if findings:
         for name, value in findings:
             print(f"{name}: {value}")
@@ -213,6 +222,9 @@ def main(argv=None) -> int:
     render.add_argument("--run", action="store_true",
                         help="execute each step's command live and capture its output")
     render.add_argument("--cwd", help="working directory for live (--run) steps")
+    render.add_argument("--timeout", type=float, metavar="SECONDS",
+                        help="per-step live-run timeout in seconds (default: 30; "
+                             "overrides the spec's run_timeout)")
     render.add_argument("--out-dir", help="output directory (default: the spec's directory)")
     render.add_argument("--png", type=int, metavar="MS",
                         help="also write a static PNG preview of the frame at MS milliseconds")
