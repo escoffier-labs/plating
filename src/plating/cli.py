@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
@@ -141,6 +142,17 @@ def _collect_string_values(value, out: list[str]) -> None:
             _collect_string_values(item, out)
 
 
+def _validate_scan_patterns(extra: list[tuple[str, str]]) -> None:
+    """Reject malformed user-supplied regular expressions."""
+    for name, pattern in extra:
+        try:
+            re.compile(pattern)
+        except re.error as exc:
+            raise WorkflowError(
+                f"scan_patterns entry {name!r} is not a valid regex: {exc}"
+            ) from exc
+
+
 def _scan_workflow(data: dict, svg: str) -> list[tuple[str, str]]:
     """Scan parsed input values and the rendered SVG, de-duplicating findings.
 
@@ -150,6 +162,7 @@ def _scan_workflow(data: dict, svg: str) -> list[tuple[str, str]]:
     The ``scan_patterns`` subtree is excluded so definitions cannot self-match.
     """
     extra = [(name, pat) for name, pat in (data.get("scan_patterns") or [])]
+    _validate_scan_patterns(extra)
     findings: list[tuple[str, str]] = []
     seen: set[tuple[str, str]] = set()
     values: list[str] = []
