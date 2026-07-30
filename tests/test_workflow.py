@@ -362,3 +362,108 @@ def test_cli_xml_control_character_returns_exit_code_without_traceback(tmp_path,
     assert "forbidden XML 1.0 control character" in captured.err
     assert "Traceback" not in captured.err
     assert not (tmp_path / "pipeline.svg").exists()
+
+
+def test_cli_workflow_leak_scan_prevents_svg_write_and_directory_creation(
+    tmp_path, capsys
+):
+    data = _spec()
+    ip = ".".join(["192", "168", "1", "1"])
+    data["description"] = f"deploy to {ip} internal host"
+    source = _write_spec(tmp_path, data)
+    out_dir = tmp_path / "nested" / "deep"
+    output = out_dir / "pipeline.svg"
+
+    code = main(["workflow", str(source), "--out", str(output)])
+
+    assert code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "private-ip" in captured.err
+    assert "Traceback" not in captured.err
+    assert not output.exists()
+    assert not out_dir.exists()
+
+
+def test_cli_workflow_leak_scan_checks_raw_input_when_xml_escaping_hides_it(
+    tmp_path, capsys
+):
+    data = _spec()
+    data["columns"][0]["nodes"][0]["detail"] = 'leak "release-secret" token'
+    data["scan_patterns"] = [["release-token", r'"release-secret"']]
+    source = _write_spec(tmp_path, data)
+
+    code = main(["workflow", str(source)])
+
+    assert code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "release-token" in captured.err
+    assert "Traceback" not in captured.err
+    assert not (tmp_path / "pipeline.svg").exists()
+
+
+def test_cli_workflow_leak_scan_clean_spec_with_quoted_secret_pattern_writes_svg(
+    tmp_path, capsys
+):
+    data = _spec()
+    data["scan_patterns"] = [["release-token", r'"release-secret"']]
+    source = _write_spec(tmp_path, data)
+
+    code = main(["workflow", str(source)])
+
+    assert code == 0
+    captured = capsys.readouterr()
+    output = tmp_path / "pipeline.svg"
+    assert output.exists()
+    assert output.read_text() == render_workflow(_spec())
+    assert captured.out == f"plating: wrote {output}\n"
+    assert captured.err == ""
+
+
+def test_cli_workflow_leak_scan_catches_renderer_uppercased_eyebrow(
+    tmp_path, capsys
+):
+    data = _spec()
+    data["eyebrow"] = "secret-value-eyebrow"
+    data["scan_patterns"] = [["upper-secret", r"SECRET-VALUE-EYEBROW"]]
+    source = _write_spec(tmp_path, data)
+
+    code = main(["workflow", str(source)])
+
+    assert code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "upper-secret" in captured.err
+    assert "Traceback" not in captured.err
+    assert not (tmp_path / "pipeline.svg").exists()
+
+
+def test_cli_workflow_leak_scan_deduplicates_input_and_svg_findings(
+    tmp_path, capsys
+):
+    data = _spec()
+    ip = ".".join(["10", "0", "0", "1"])
+    data["description"] = f"deploy to {ip}"
+    source = _write_spec(tmp_path, data)
+
+    code = main(["workflow", str(source)])
+
+    assert code == 2
+    captured = capsys.readouterr()
+    assert captured.err.count("private-ip") == 1
+    assert not (tmp_path / "pipeline.svg").exists()
+
+
+def test_cli_workflow_write_oserror_returns_two_without_traceback(tmp_path, capsys):
+    data = _spec()
+    source = _write_spec(tmp_path, data)
+    output = tmp_path / "pipeline.svg"
+    output.mkdir()
+
+    code = main(["workflow", str(source), "--out", str(output)])
+
+    assert code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "Traceback" not in captured.err

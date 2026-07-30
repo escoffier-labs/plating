@@ -127,12 +127,58 @@ def _scan(args) -> int:
     return 0
 
 
+def _collect_string_values(value, out: list[str]) -> None:
+    """Append every string reachable from *value*, recursing into dicts/lists."""
+    if isinstance(value, str):
+        out.append(value)
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            if key == "scan_patterns":
+                continue
+            _collect_string_values(item, out)
+    elif isinstance(value, list):
+        for item in value:
+            _collect_string_values(item, out)
+
+
+def _scan_workflow(data: dict, svg: str) -> list[tuple[str, str]]:
+    """Scan parsed input values and the rendered SVG, de-duplicating findings.
+
+    Input values are scanned as the actual parsed strings (not flattened through
+    ``json.dumps``), so a quoted secret survives even though JSON serialization
+    would add backslashes and SVG escaping would turn quotes into ``&quot;``.
+    The ``scan_patterns`` subtree is excluded so definitions cannot self-match.
+    """
+    extra = [(name, pat) for name, pat in (data.get("scan_patterns") or [])]
+    findings: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    values: list[str] = []
+    _collect_string_values(data, values)
+    for text in values:
+        for finding in scan(text, extra):
+            if finding not in seen:
+                seen.add(finding)
+                findings.append(finding)
+    for finding in scan(svg, extra):
+        if finding not in seen:
+            seen.add(finding)
+            findings.append(finding)
+    return findings
+
+
 def _workflow(args) -> int:
     source = Path(args.spec)
     output = Path(args.out) if args.out else source.with_suffix(".svg")
     try:
         data, _ = load_spec(source)
         svg = render_workflow(data)
+        findings = _scan_workflow(data, svg)
+        if findings:
+            print("plating: leak scan found identity in the workflow:",
+                  file=sys.stderr)
+            for name, value in findings:
+                print(f"  - {name}: {value}", file=sys.stderr)
+            return 2
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(svg)
     except (OSError, json.JSONDecodeError, WorkflowError) as exc:
