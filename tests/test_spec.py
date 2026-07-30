@@ -20,6 +20,13 @@ from plating.scan import scan, scan_secrets, secret_patterns
 from plating.spec import SpecError, resolve_steps
 
 
+def _count_open_fds() -> int | None:
+    for root in (Path("/proc/self/fd"), Path("/dev/fd")):
+        if root.is_dir():
+            return len(list(root.iterdir()))
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Issue #9: normalize applies to the displayed command AND output, but live
 # execution still uses the original unnormalized command string.
@@ -1076,6 +1083,49 @@ def test_captured_output_file_skips_invalid_timeout(tmp_path, monkeypatch):
     steps = resolve_steps(data, tmp_path, run=True)
     assert steps[0].output == "captured\n"
     assert called is False
+
+
+# ---------------------------------------------------------------------------
+# PR #26: resolve_steps lifecycle — owned fds close on every early error.
+# ---------------------------------------------------------------------------
+
+def test_resolve_steps_invalid_timeout_does_not_leak_fds(tmp_path):
+    if not spec_module._SUPPORTS_POSIX_DIRFD:
+        pytest.skip("requires POSIX dirfd support")
+    baseline = _count_open_fds()
+    if baseline is None:
+        pytest.skip("open descriptor counting unavailable on this platform")
+    data = {"run_timeout": 0, "steps": [{"command": "ls", "run": True}]}
+    for _ in range(8):
+        with pytest.raises(SpecError, match="timeout"):
+            resolve_steps(data, tmp_path)
+    assert _count_open_fds() == baseline
+
+
+def test_resolve_steps_missing_confined_cwd_does_not_leak_fds(tmp_path):
+    if not spec_module._SUPPORTS_POSIX_DIRFD:
+        pytest.skip("requires POSIX dirfd support")
+    baseline = _count_open_fds()
+    if baseline is None:
+        pytest.skip("open descriptor counting unavailable on this platform")
+    data = {"cwd": "missing", "steps": [{"command": "pwd", "run": True}]}
+    for _ in range(8):
+        with pytest.raises(SpecError, match="cwd"):
+            resolve_steps(data, tmp_path)
+    assert _count_open_fds() == baseline
+
+
+def test_resolve_steps_invalid_confined_cwd_does_not_leak_fds(tmp_path):
+    if not spec_module._SUPPORTS_POSIX_DIRFD:
+        pytest.skip("requires POSIX dirfd support")
+    baseline = _count_open_fds()
+    if baseline is None:
+        pytest.skip("open descriptor counting unavailable on this platform")
+    data = {"cwd": "../escape", "steps": [{"command": "pwd", "run": True}]}
+    for _ in range(8):
+        with pytest.raises(SpecError, match="cwd"):
+            resolve_steps(data, tmp_path)
+    assert _count_open_fds() == baseline
 
 
 def test_live_run_invalid_timeout_rejected(tmp_path):

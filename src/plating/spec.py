@@ -491,14 +491,16 @@ def resolve_steps(data, base_dir, *, run=False, cwd=None, timeout=None) -> list[
         else:
             stable_base = _open_spec_base(base)
 
-    run_timeout = _resolve_timeout(data, cli_timeout=timeout) if needs_live else None
-    env = _build_env() if needs_live else None
-    stable_cwd = (
-        _prepare_run_cwd(data, stable_base, base, cli_cwd=cwd)
-        if needs_live else None
-    )
+    stable_cwd: _StableCwd | None = None
+    run_timeout: float | None = None
+    env: dict[str, str] | None = None
     steps: list[Step] = []
     try:
+        if needs_live:
+            run_timeout = _resolve_timeout(data, cli_timeout=timeout)
+            env = _build_env()
+            stable_cwd = _prepare_run_cwd(data, stable_base, base, cli_cwd=cwd)
+
         for raw in steps_raw:
             command = raw["command"]
             display_command = _command_display(command, label="command")
