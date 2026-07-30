@@ -1,9 +1,10 @@
 """Best-effort identity/leak scan for terminal-demo content.
 
 Catches the most common things that leak into a recording: home-directory
-paths, the machine's current username and hostname, and private IPs. It is a
-guardrail, not a secrets scanner; pair it with a real scanner for anything
-sensitive.
+paths, the machine's current username and hostname, private IPs, and a few
+narrow secret shapes (``API_TOKEN=...`` assignments and PEM private-key
+headers via :func:`scan_secrets`). It is a guardrail, not a secrets scanner;
+pair it with a real scanner for anything sensitive.
 """
 from __future__ import annotations
 
@@ -61,6 +62,53 @@ def scan(text: str, extra: list[tuple[str, str]] | None = None) -> list[tuple[st
     for name, pattern in patterns:
         for match in re.finditer(pattern, text):
             key = (name, match.group(0))
+            if key not in seen:
+                seen.add(key)
+                findings.append(key)
+    return findings
+
+
+# Narrow, dependency-free secret-assignment patterns. These are a guardrail, not
+# a real secrets scanner: they flag the common shapes that leak into a recording
+# (an ``API_TOKEN=...`` assignment or a PEM private-key header). Findings are
+# redacted so the matched value never appears in the report. Pair this with a
+# dedicated scanner for anything sensitive.
+_SECRET_PATTERNS: list[tuple[str, str]] = [
+    # ``SOMETHING_TOKEN=value``, ``SOMETHING_API_KEY=value``,
+    # ``SOMETHING_SECRET=value``, ``SOMETHING_PASSWORD=value`` assignments.
+    ("secret-assignment",
+     r"\b[A-Z][A-Z0-9_]*(?:TOKEN|API_KEY|SECRET|PASSWORD)=[^\s;'\"]+"),
+    # PEM private-key header (RSA/EC/DSA/OpenSSH/PGP/ENCRYPTED).
+    ("secret-private-key",
+     r"-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP |ENCRYPTED )?PRIVATE KEY-----"),
+]
+
+
+def secret_patterns() -> list[tuple[str, str]]:
+    """Return the (name, regex) secret-assignment patterns."""
+    return list(_SECRET_PATTERNS)
+
+
+def _redact_secret(name: str, match: str) -> str:
+    if name == "secret-private-key":
+        return match
+    head, _, _ = match.partition("=")
+    return f"{head}=<redacted>"
+
+
+def scan_secrets(text: str) -> list[tuple[str, str]]:
+    """Scan ``text`` for common secret assignments and PEM private-key headers.
+
+    Findings are returned as ``(rule_name, redacted_text)`` so the actual secret
+    value is never echoed back. This is best-effort and dependency-free; use a
+    dedicated scanner for sensitive material.
+    """
+    findings: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for name, pattern in secret_patterns():
+        for match in re.finditer(pattern, text):
+            redacted = _redact_secret(name, match.group(0))
+            key = (name, redacted)
             if key not in seen:
                 seen.add(key)
                 findings.append(key)
