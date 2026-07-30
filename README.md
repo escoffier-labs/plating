@@ -123,11 +123,13 @@ Live capture (`--run`) is convenient; committing captured output is what makes i
 { "normalize": [["/tmp/tmp.AbC123/demo", "~/my-repo"]] }
 ```
 
-`normalize` rules are applied to the command **and** output shown in the recording. Live execution always runs the original, unnormalized command string, so a normalized display path never breaks the actual run.
+`normalize` rules are applied to the command **and** output shown in the recording. Live execution always runs the original, unnormalized command string or argv array, so a normalized display path never breaks the actual run.
 
 ### `output_file` confinement
 
 `output_file` is resolved under the spec's directory. Absolute paths, `..` traversal, and symlink escapes are rejected with a `plating:` error before any artifact is written. A normal nested path inside the spec directory (e.g. `"captures/out.txt"`) works as expected.
+
+On POSIX systems with `O_DIRECTORY` and `O_NOFOLLOW`, paths are opened component-by-component through directory descriptors so symlink swaps after validation are rejected. **Windows and other platforms without that capability cannot use `output_file`**. Use a literal `"output"` value instead. Literal backslashes in POSIX filenames are preserved and are not treated as path separators.
 
 ## Sanitization
 
@@ -141,11 +143,12 @@ plating scan some-recording.cast
 
 ## Live runs (`--run`)
 
-When a step runs live, plating parses the command string into an argv list with the standard library and runs it with `shell=False`. Consequences:
+When a step runs live, plating parses the command into an argv list and runs it with `shell=False`. Consequences:
 
+- **Use argv arrays for non-trivial commands.** A `command` string is split with `shlex` (POSIX rules). On Windows, strings containing backslashes are rejected. POSIX also rejects ambiguous drive and UNC forms such as `C:\...` and `\\...`. Use an explicit JSON argv array for quoted arguments, empty strings, and backslash paths.
 - **No shell operators.** Pipes (`|`), redirects (`>`), `&&`, `;`, backticks, and `$()` substitutions are not supported in live capture. Use a real script for anything that needs a shell.
 - **Empty or malformed commands are rejected** (e.g. an unterminated quote).
-- **`cwd` is confined.** A spec-declared `cwd` is resolved relative to and confined within the spec directory. The CLI `--cwd` argument may point outside the spec directory, but must exist and be a directory.
+- **`cwd` is confined on POSIX.** A spec-declared `cwd` is resolved relative to and confined within the spec directory using stable directory descriptors. **Windows and other platforms without `O_DIRECTORY` + `O_NOFOLLOW` reject spec-declared `cwd`** before subprocess start. The CLI `--cwd` argument may point anywhere on disk (not confined to the spec directory), but must exist and be a directory.
 - **Environment is an explicit allowlist.** Live runs inherit only `PATH`, `LANG`, `LC_ALL`, `LC_CTYPE`, `TERM`, `COLORTERM`, `NO_COLOR`, and (when present) the Windows launch variables `SYSTEMROOT`, `WINDIR`, `COMSPEC`, `PATHEXT`. `HOME`, cloud-provider, CI, SSH, and token variables are **not** inherited.
 - **Timeout is enforced.** Each live step gets a positive finite timeout, default 30 seconds. Set it with the spec's `run_timeout` key or the CLI `--timeout` flag (CLI wins). A timeout is reported as a `plating:` error, not a traceback.
 
