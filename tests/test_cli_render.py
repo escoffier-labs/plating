@@ -335,3 +335,117 @@ def test_cli_render_run_spec_error_surfaces_before_artifacts(
     assert captured.err.startswith("plating:")
     assert "Traceback" not in captured.err
     assert not (out / "demo.cast").exists()
+
+
+# ---------------------------------------------------------------------------
+# Issue #21: --allow-leaks leaves a durable override marker.
+# ---------------------------------------------------------------------------
+
+def test_cli_allow_leaks_annotates_svg_metadata_and_stdout(
+    tmp_path, monkeypatch, capsys,
+):
+    monkeypatch.setattr("plating.cli.render_svg", _write_clean_svg)
+    secret_value = "fake-example-value"
+    spec = _base_spec(
+        steps=[{
+            "command": "cat config",
+            "output": f"API_TOKEN={secret_value}\n",
+        }],
+    )
+    spec_path = tmp_path / "spec.json"
+    spec_path.write_text(json.dumps(spec))
+    out = tmp_path / "out"
+
+    code = main([
+        "render", str(spec_path), "--out-dir", str(out), "--allow-leaks",
+    ])
+
+    assert code == 0
+    captured = capsys.readouterr()
+    assert "secret-assignment" in captured.err
+    assert "leak override allowed" in captured.out
+    assert "secret-assignment" in captured.out
+    svg = (out / "demo.svg").read_text()
+    assert 'id="plating-leak-override"' in svg
+    assert "allowed=true" in svg
+    assert "secret-assignment" in svg
+    assert secret_value not in svg
+    assert secret_value not in captured.out
+
+
+def test_cli_clean_render_has_no_leak_override_marker(
+    tmp_path, monkeypatch, capsys,
+):
+    monkeypatch.setattr("plating.cli.render_svg", _write_clean_svg)
+    spec_path = tmp_path / "spec.json"
+    spec_path.write_text(json.dumps(_base_spec()))
+    out = tmp_path / "out"
+
+    code = main(["render", str(spec_path), "--out-dir", str(out)])
+
+    assert code == 0
+    captured = capsys.readouterr()
+    assert "leak override" not in captured.out
+    assert "plating-leak-override" not in (out / "demo.svg").read_text()
+
+
+def test_cli_allow_leaks_metadata_omits_matched_secret_value(
+    tmp_path, monkeypatch, capsys,
+):
+    monkeypatch.setattr("plating.cli.render_svg", _write_clean_svg)
+    secret_value = "super-secret-token-value"
+    spec = _base_spec(
+        steps=[{
+            "command": "cat config",
+            "output": f"API_TOKEN={secret_value}\n",
+        }],
+    )
+    spec_path = tmp_path / "spec.json"
+    spec_path.write_text(json.dumps(spec))
+    out = tmp_path / "out"
+
+    code = main([
+        "render", str(spec_path), "--out-dir", str(out), "--allow-leaks",
+    ])
+
+    assert code == 0
+    svg = (out / "demo.svg").read_text()
+    assert secret_value not in svg
+    assert "API_TOKEN=" not in svg
+    assert "finding-count=" in svg
+    assert "rules=" in svg
+
+
+def test_cli_renderer_leak_allow_leaks_keeps_png_and_override_marker(
+    tmp_path, monkeypatch, capsys,
+):
+    """Complement #19 override test: durable marker without duplicating refusal."""
+
+    def fake_render_svg(cast_path, svg_path, **kwargs):
+        Path(svg_path).write_text("<svg>RENDERER-LEAK</svg>")
+        return Path(svg_path)
+
+    def fake_render_png(svg_path, png_path):
+        Path(png_path).write_text("png")
+        return Path(png_path)
+
+    monkeypatch.setattr("plating.cli.render_svg", fake_render_svg)
+    monkeypatch.setattr("plating.cli.render_png", fake_render_png)
+    spec = _base_spec(scan_patterns=[["renderer-leak", "RENDERER-LEAK"]])
+    spec_path = tmp_path / "spec.json"
+    spec_path.write_text(json.dumps(spec))
+    out = tmp_path / "out"
+
+    code = main([
+        "render", str(spec_path), "--out-dir", str(out), "--png", "100",
+        "--allow-leaks",
+    ])
+
+    assert code == 0
+    captured = capsys.readouterr()
+    assert "renderer-leak" in captured.err
+    assert "leak override allowed" in captured.out
+    svg = (out / "demo.svg").read_text()
+    assert 'id="plating-leak-override"' in svg
+    assert "renderer-leak" in svg
+    assert (out / "demo.png").exists()

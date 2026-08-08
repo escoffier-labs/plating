@@ -19,6 +19,73 @@ class UnsafeTitleError(ValueError):
     """Raised when a spec title cannot be used as a confined filename stem."""
 
 
+_SVG_OPEN_TAG = re.compile(r"(<svg\b[^>]*>)", re.IGNORECASE)
+_LEAK_OVERRIDE_METADATA = re.compile(
+    r'<metadata\s+id="plating-leak-override"[^>]*>.*?</metadata>\s*',
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _xml_escape_attr(text: str) -> str:
+    return (
+        text.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
+
+
+def _leak_override_rule_names(findings: list[tuple[str, str]]) -> list[str]:
+    """Return sorted unique rule names (safe provenance only; never matched values)."""
+    return sorted({name for name, _ in findings})
+
+
+def _leak_override_stdout_line(findings: list[tuple[str, str]]) -> str:
+    rules = _leak_override_rule_names(findings)
+    count = len(findings)
+    noun = "finding" if count == 1 else "findings"
+    return (
+        f"plating: leak override allowed ({count} {noun}; "
+        f"rules: {', '.join(rules)})"
+    )
+
+
+def _leak_override_metadata(findings: list[tuple[str, str]]) -> str:
+    rules = _leak_override_rule_names(findings)
+    count = len(findings)
+    rules_attr = _xml_escape_attr(",".join(rules))
+    return (
+        f'<metadata id="plating-leak-override">'
+        f"plating-leak-override allowed=true "
+        f"finding-count={count} rules={rules_attr}"
+        f"</metadata>"
+    )
+
+
+def _annotate_svg_leak_override(svg_text: str, findings: list[tuple[str, str]]) -> str:
+    """Insert or replace a deterministic leak-override ``<metadata>`` block.
+
+    Records only override state, finding count, and rule names. Matched values
+    are never copied into the artifact.
+    """
+    if not findings:
+        return svg_text
+    cleaned = _LEAK_OVERRIDE_METADATA.sub("", svg_text)
+    match = _SVG_OPEN_TAG.search(cleaned)
+    if not match:
+        return svg_text
+    meta = _leak_override_metadata(findings)
+    insert_at = match.end()
+    return f"{cleaned[:insert_at]}{meta}{cleaned[insert_at:]}"
+
+
+def _write_svg_leak_override(svg_path: Path, findings: list[tuple[str, str]]) -> None:
+    svg_text = svg_path.read_text()
+    annotated = _annotate_svg_leak_override(svg_text, findings)
+    if annotated != svg_text:
+        svg_path.write_text(annotated)
+
+
 def _validate_stem(title: str) -> str:
     """Return ``title`` unchanged when it is a safe single-segment filename stem.
 
@@ -95,6 +162,8 @@ def _render(args) -> int:
     findings = scan(cast_text, extra)
     findings.extend(scan_secrets(cast_text))
     findings.extend(scan(prompt_ctx, prompt_patterns()))
+    allowed_findings: list[tuple[str, str]] = []
+    override_announced = False
     if findings:
         print("plating: leak scan found sensitive content in the recording:",
               file=sys.stderr)
@@ -104,6 +173,7 @@ def _render(args) -> int:
             print("plating: refusing to render. Add `normalize` rules to the spec, "
                   "or pass --allow-leaks to override.", file=sys.stderr)
             return 2
+        allowed_findings.extend(findings)
     else:
         print(f"plating: leak scan clean ({cast_path.name})")
 
@@ -140,6 +210,11 @@ def _render(args) -> int:
             print("plating: refusing to render. Add `normalize` rules to the spec, "
                   "or pass --allow-leaks to override.", file=sys.stderr)
             return 2
+        allowed_findings.extend(svg_findings)
+    if allowed_findings:
+        _write_svg_leak_override(svg_path, allowed_findings)
+        print(_leak_override_stdout_line(allowed_findings))
+        override_announced = True
     print(f"plating: wrote {svg_path}")
 
     if args.png is not None:
@@ -171,6 +246,11 @@ def _render(args) -> int:
                 print("plating: refusing to render. Add `normalize` rules to the spec, "
                       "or pass --allow-leaks to override.", file=sys.stderr)
                 return 2
+            allowed_findings.extend(frame_findings)
+            _write_svg_leak_override(svg_path, allowed_findings)
+            if not override_announced:
+                print(_leak_override_stdout_line(allowed_findings))
+                override_announced = True
         try:
             rendered_png_path = render_png(frame, png_path)
             print(f"plating: wrote {rendered_png_path}")
