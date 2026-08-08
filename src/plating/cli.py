@@ -57,7 +57,6 @@ def _render(args) -> int:
         print(f"plating: unsafe title: {exc}", file=sys.stderr)
         return 2
     out_dir = Path(args.out_dir) if args.out_dir else base
-    out_dir.mkdir(parents=True, exist_ok=True)
 
     try:
         steps = resolve_steps(data, base, run=args.run, cwd=args.cwd,
@@ -73,6 +72,12 @@ def _render(args) -> int:
         return 2
 
     cast_path = out_dir / f"{stem}.cast"
+    svg_path = out_dir / f"{stem}.svg"
+    png_path = out_dir / f"{stem}.png"
+    frame = out_dir / f"{stem}.frame.svg"
+
+    for artifact in (cast_path, svg_path, png_path, frame):
+        artifact.unlink(missing_ok=True)
 
     # Scan the raw prompt configuration and cwd for identity/path leaks before
     # any artifact is written. These narrowly prompt-specific patterns are
@@ -83,6 +88,11 @@ def _render(args) -> int:
     if cwd:
         prompt_ctx = f"{prompt_ctx}\n{cwd}"
     extra = [(name, pat) for name, pat in (data.get("scan_patterns") or [])]
+    try:
+        _validate_scan_patterns(extra)
+    except WorkflowError as exc:
+        print(f"plating: {exc}", file=sys.stderr)
+        return 2
     findings = scan(cast_text, extra)
     findings.extend(scan_secrets(cast_text))
     findings.extend(scan(prompt_ctx, prompt_patterns()))
@@ -98,28 +108,77 @@ def _render(args) -> int:
     else:
         print(f"plating: leak scan clean ({cast_path.name})")
 
+    out_dir.mkdir(parents=True, exist_ok=True)
     cast_path.write_text(cast_text)
 
     padding = data.get("padding", 14)
     window = data.get("window", True)
-    svg_path = out_dir / f"{stem}.svg"
     try:
         render_svg(cast_path, svg_path, width=opts.width, height=opts.height,
                    padding=padding, window=window)
     except RenderError as exc:
+        svg_path.unlink(missing_ok=True)
+        png_path.unlink(missing_ok=True)
         print(f"plating: {exc}", file=sys.stderr)
         return 1
+    try:
+        svg_text = svg_path.read_text()
+    except OSError as exc:
+        svg_path.unlink(missing_ok=True)
+        png_path.unlink(missing_ok=True)
+        print(f"plating: {exc}", file=sys.stderr)
+        return 2
+    svg_findings = scan(svg_text, extra)
+    svg_findings.extend(scan_secrets(svg_text))
+    if svg_findings:
+        print("plating: leak scan found sensitive content in the rendered SVG:",
+              file=sys.stderr)
+        for name, value in svg_findings:
+            print(f"  - {name}: {value}", file=sys.stderr)
+        if not args.allow_leaks:
+            svg_path.unlink(missing_ok=True)
+            png_path.unlink(missing_ok=True)
+            print("plating: refusing to render. Add `normalize` rules to the spec, "
+                  "or pass --allow-leaks to override.", file=sys.stderr)
+            return 2
     print(f"plating: wrote {svg_path}")
 
     if args.png is not None:
-        frame = out_dir / f"{stem}.frame.svg"
-        render_svg(cast_path, frame, width=opts.width, height=opts.height,
-                   padding=padding, window=window, at=args.png)
         try:
-            png_path = render_png(frame, out_dir / f"{stem}.png")
-            print(f"plating: wrote {png_path}")
+            render_svg(cast_path, frame, width=opts.width, height=opts.height,
+                       padding=padding, window=window, at=args.png)
         except RenderError as exc:
-            print(f"plating: png preview skipped: {exc}", file=sys.stderr)
+            frame.unlink(missing_ok=True)
+            png_path.unlink(missing_ok=True)
+            print(f"plating: {exc}", file=sys.stderr)
+            return 1
+        try:
+            frame_text = frame.read_text()
+        except OSError as exc:
+            frame.unlink(missing_ok=True)
+            png_path.unlink(missing_ok=True)
+            print(f"plating: {exc}", file=sys.stderr)
+            return 2
+        frame_findings = scan(frame_text, extra)
+        frame_findings.extend(scan_secrets(frame_text))
+        if frame_findings:
+            print("plating: leak scan found sensitive content in the rendered SVG:",
+                  file=sys.stderr)
+            for name, value in frame_findings:
+                print(f"  - {name}: {value}", file=sys.stderr)
+            if not args.allow_leaks:
+                frame.unlink(missing_ok=True)
+                png_path.unlink(missing_ok=True)
+                print("plating: refusing to render. Add `normalize` rules to the spec, "
+                      "or pass --allow-leaks to override.", file=sys.stderr)
+                return 2
+        try:
+            rendered_png_path = render_png(frame, png_path)
+            print(f"plating: wrote {rendered_png_path}")
+        except RenderError as exc:
+            png_path.unlink(missing_ok=True)
+            print(f"plating: {exc}", file=sys.stderr)
+            return 1
         finally:
             frame.unlink(missing_ok=True)
     return 0
