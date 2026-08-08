@@ -16,8 +16,13 @@ import pytest
 import plating.spec as spec_module
 from plating.cast import Step
 from plating.cli import main
+from plating.render import RenderError
 from plating.scan import scan, scan_secrets, secret_patterns
 from plating.spec import SpecError, resolve_steps
+
+
+def _write_clean_svg(*args, **kwargs):
+    Path(args[1]).write_text("<svg></svg>")
 
 
 def _count_open_fds() -> int | None:
@@ -185,7 +190,7 @@ def test_spec_cwd_symlink_loop_raises_spec_error(tmp_path):
 
 
 def test_cli_symlink_loop_exit_2_without_traceback(tmp_path, monkeypatch):
-    monkeypatch.setattr("plating.cli.render_svg", lambda *args, **kwargs: None)
+    monkeypatch.setattr("plating.cli.render_svg", _write_clean_svg)
     loop_a = tmp_path / "loop-a"
     loop_b = tmp_path / "loop-b"
     loop_a.symlink_to(loop_b)
@@ -454,6 +459,66 @@ def test_scan_secret_marker_in_output_file_refuses_render(tmp_path):
     assert result.returncode == 2, result.stderr
     assert "Traceback" not in result.stderr
     assert not (out / "demo.cast").exists()
+
+
+def test_cast_scan_rejection_removes_stale_artifacts_before_returning(tmp_path):
+    spec = {
+        "title": "demo",
+        "width": 40,
+        "height": 4,
+        "steps": [{"command": "cat config", "output": "API_TOKEN=fake-example-value\n"}],
+    }
+    spec_path = tmp_path / "spec.json"
+    spec_path.write_text(json.dumps(spec))
+    out = tmp_path / "out"
+    out.mkdir()
+    for suffix in ("cast", "svg", "png"):
+        (out / f"demo.{suffix}").write_text("stale")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "plating.cli", "render", str(spec_path),
+         "--out-dir", str(out), "--png", "100"],
+        capture_output=True, text=True,
+    )
+
+    assert result.returncode == 2, result.stderr
+    assert "secret-assignment" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert not (out / "demo.cast").exists()
+    assert not (out / "demo.svg").exists()
+    assert not (out / "demo.png").exists()
+
+
+def test_cli_render_malformed_scan_pattern_returns_two_before_scan_or_write(
+    tmp_path, monkeypatch, capsys
+):
+    def fail_scan(*args, **kwargs):
+        raise AssertionError("scan must not run after scan_patterns validation fails")
+
+    def fail_render_svg(*args, **kwargs):
+        raise AssertionError("renderer must not run after scan_patterns validation fails")
+
+    monkeypatch.setattr("plating.cli.scan", fail_scan)
+    monkeypatch.setattr("plating.cli.render_svg", fail_render_svg)
+    spec = {
+        "title": "demo",
+        "width": 40,
+        "height": 4,
+        "steps": [{"command": "echo hi", "output": "hi\n"}],
+        "scan_patterns": [["bad-pattern", "["]],
+    }
+    spec_path = tmp_path / "spec.json"
+    spec_path.write_text(json.dumps(spec))
+    out = tmp_path / "out"
+
+    code = main(["render", str(spec_path), "--out-dir", str(out)])
+
+    assert code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "bad-pattern" in captured.err
+    assert "Traceback" not in captured.err
+    assert not out.exists()
 
 
 # ---------------------------------------------------------------------------
@@ -741,7 +806,7 @@ def test_spec_cwd_file_rejected_before_run(tmp_path, monkeypatch):
 def test_cli_cwd_may_be_outside_base_when_it_exists(tmp_path, monkeypatch):
     outside = tmp_path.parent / "external-cwd"
     outside.mkdir()
-    monkeypatch.setattr("plating.cli.render_svg", lambda *args, **kwargs: None)
+    monkeypatch.setattr("plating.cli.render_svg", _write_clean_svg)
     try:
         spec = {
             "title": "demo",
@@ -788,6 +853,168 @@ def test_cli_cwd_missing_directory_rejected(tmp_path):
     assert "cwd" in result.stderr.lower()
     assert "Traceback" not in result.stderr
     assert not (out / "demo.cast").exists()
+
+
+def test_cli_rejects_renderer_leak_before_publishing_svg_or_png(
+    tmp_path, monkeypatch, capsys
+):
+    def fake_render_svg(cast_path, svg_path, **kwargs):
+        Path(svg_path).write_text("<svg>RENDERER-LEAK</svg>")
+        return Path(svg_path)
+
+    def fail_render_png(*args, **kwargs):
+        raise AssertionError("PNG rendering must not run after SVG scan failure")
+
+    monkeypatch.setattr("plating.cli.render_svg", fake_render_svg)
+    monkeypatch.setattr("plating.cli.render_png", fail_render_png)
+    spec = {
+        "title": "demo",
+        "width": 40,
+        "height": 4,
+        "steps": [{"command": "echo hi", "output": "hi\n"}],
+        "scan_patterns": [["renderer-leak", "RENDERER-LEAK"]],
+    }
+    spec_path = tmp_path / "spec.json"
+    spec_path.write_text(json.dumps(spec))
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "demo.png").write_text("stale")
+
+    code = main(["render", str(spec_path), "--out-dir", str(out), "--png", "100"])
+
+    assert code == 2
+    captured = capsys.readouterr()
+    assert captured.out == "plating: leak scan clean (demo.cast)\n"
+    assert "renderer-leak" in captured.err
+    assert "Traceback" not in captured.err
+    assert not (out / "demo.svg").exists()
+    assert not (out / "demo.png").exists()
+
+
+def test_cli_render_svg_failure_removes_partial_svg(tmp_path, monkeypatch, capsys):
+    def fail_render_svg(cast_path, svg_path, **kwargs):
+        Path(svg_path).write_text("<svg>partial</svg>")
+        raise RenderError("svg-term failed: boom")
+
+    monkeypatch.setattr("plating.cli.render_svg", fail_render_svg)
+    spec = {
+        "title": "demo",
+        "width": 40,
+        "height": 4,
+        "steps": [{"command": "echo hi", "output": "hi\n"}],
+    }
+    spec_path = tmp_path / "spec.json"
+    spec_path.write_text(json.dumps(spec))
+    out = tmp_path / "out"
+
+    code = main(["render", str(spec_path), "--out-dir", str(out)])
+
+    assert code == 1
+    captured = capsys.readouterr()
+    assert "svg-term failed: boom" in captured.err
+    assert not (out / "demo.svg").exists()
+
+
+def test_cli_render_frame_failure_removes_partial_frame_and_png(
+    tmp_path, monkeypatch, capsys
+):
+    calls = 0
+
+    def render_svg_then_fail_frame(cast_path, svg_path, **kwargs):
+        nonlocal calls
+        calls += 1
+        Path(svg_path).write_text("<svg>partial</svg>")
+        if calls == 2:
+            raise RenderError("svg-term failed: frame boom")
+        return Path(svg_path)
+
+    monkeypatch.setattr("plating.cli.render_svg", render_svg_then_fail_frame)
+    spec = {
+        "title": "demo",
+        "width": 40,
+        "height": 4,
+        "steps": [{"command": "echo hi", "output": "hi\n"}],
+    }
+    spec_path = tmp_path / "spec.json"
+    spec_path.write_text(json.dumps(spec))
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "demo.png").write_text("stale")
+
+    code = main(["render", str(spec_path), "--out-dir", str(out), "--png", "100"])
+
+    assert code == 1
+    captured = capsys.readouterr()
+    assert "svg-term failed: frame boom" in captured.err
+    assert (out / "demo.svg").exists()
+    assert not (out / "demo.frame.svg").exists()
+    assert not (out / "demo.png").exists()
+
+
+def test_cli_png_failure_is_render_failure_and_removes_stale_png(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setattr("plating.cli.render_svg", _write_clean_svg)
+
+    def fail_render_png(svg_path, png_path):
+        Path(png_path).unlink(missing_ok=True)
+        raise RenderError("chrome screenshot produced no file")
+
+    monkeypatch.setattr("plating.cli.render_png", fail_render_png)
+    spec = {
+        "title": "demo",
+        "width": 40,
+        "height": 4,
+        "steps": [{"command": "echo hi", "output": "hi\n"}],
+    }
+    spec_path = tmp_path / "spec.json"
+    spec_path.write_text(json.dumps(spec))
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "demo.png").write_text("stale")
+
+    code = main(["render", str(spec_path), "--out-dir", str(out), "--png", "100"])
+
+    assert code == 1
+    captured = capsys.readouterr()
+    assert "chrome screenshot produced no file" in captured.err
+    assert not (out / "demo.png").exists()
+
+
+def test_cli_allow_leaks_preserves_renderer_leak_override(
+    tmp_path, monkeypatch, capsys
+):
+    def fake_render_svg(cast_path, svg_path, **kwargs):
+        Path(svg_path).write_text("<svg>RENDERER-LEAK</svg>")
+        return Path(svg_path)
+
+    def fake_render_png(svg_path, png_path):
+        Path(png_path).write_text("png")
+        return Path(png_path)
+
+    monkeypatch.setattr("plating.cli.render_svg", fake_render_svg)
+    monkeypatch.setattr("plating.cli.render_png", fake_render_png)
+    spec = {
+        "title": "demo",
+        "width": 40,
+        "height": 4,
+        "steps": [{"command": "echo hi", "output": "hi\n"}],
+        "scan_patterns": [["renderer-leak", "RENDERER-LEAK"]],
+    }
+    spec_path = tmp_path / "spec.json"
+    spec_path.write_text(json.dumps(spec))
+    out = tmp_path / "out"
+
+    code = main([
+        "render", str(spec_path), "--out-dir", str(out), "--png", "100",
+        "--allow-leaks",
+    ])
+
+    assert code == 0
+    captured = capsys.readouterr()
+    assert "renderer-leak" in captured.err
+    assert (out / "demo.svg").exists()
+    assert (out / "demo.png").exists()
 
 
 # ---------------------------------------------------------------------------
@@ -874,7 +1101,7 @@ def test_live_run_spec_run_timeout_honored(tmp_path, monkeypatch):
 
 
 def test_live_run_cli_timeout_overrides_spec(tmp_path, monkeypatch):
-    monkeypatch.setattr("plating.cli.render_svg", lambda *args, **kwargs: None)
+    monkeypatch.setattr("plating.cli.render_svg", _write_clean_svg)
     spec = {
         "title": "demo",
         "run_timeout": 0.5,
@@ -897,7 +1124,7 @@ def test_live_run_cli_timeout_overrides_spec(tmp_path, monkeypatch):
 
 
 def test_live_run_cli_timeout_expired_at_process_boundary(tmp_path, monkeypatch, capsys):
-    monkeypatch.setattr("plating.cli.render_svg", lambda *args, **kwargs: None)
+    monkeypatch.setattr("plating.cli.render_svg", _write_clean_svg)
     spec = {
         "title": "demo",
         "width": 40,
