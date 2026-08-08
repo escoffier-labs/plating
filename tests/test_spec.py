@@ -521,6 +521,75 @@ def test_cli_render_malformed_scan_pattern_returns_two_before_scan_or_write(
     assert not out.exists()
 
 
+def test_cli_render_malformed_scan_pattern_shape_returns_two_without_traceback(
+    tmp_path, monkeypatch, capsys
+):
+    """Issue #16: bad scan_patterns shape must fail fast, not unpack/traceback."""
+
+    def fail_scan(*args, **kwargs):
+        raise AssertionError("scan must not run after scan_patterns validation fails")
+
+    def fail_render_svg(*args, **kwargs):
+        raise AssertionError("renderer must not run after scan_patterns validation fails")
+
+    monkeypatch.setattr("plating.cli.scan", fail_scan)
+    monkeypatch.setattr("plating.cli.render_svg", fail_render_svg)
+    spec = {
+        "title": "demo",
+        "width": 40,
+        "height": 4,
+        "steps": [{"command": "echo hi", "output": "hi\n"}],
+        "scan_patterns": [["missing-regex-only"]],
+    }
+    spec_path = tmp_path / "spec.json"
+    spec_path.write_text(json.dumps(spec))
+    out = tmp_path / "out"
+
+    code = main(["render", str(spec_path), "--out-dir", str(out)])
+
+    assert code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "scan_patterns" in captured.err
+    assert "Traceback" not in captured.err
+    assert not out.exists()
+
+
+def test_cli_render_rejects_unsupported_scan_policy_without_traceback(
+    tmp_path, monkeypatch, capsys
+):
+    """Issue #16: scan_policy is unsupported; refuse the silent no-op."""
+
+    def fail_scan(*args, **kwargs):
+        raise AssertionError("scan must not run when scan_policy is rejected")
+
+    def fail_render_svg(*args, **kwargs):
+        raise AssertionError("renderer must not run when scan_policy is rejected")
+
+    monkeypatch.setattr("plating.cli.scan", fail_scan)
+    monkeypatch.setattr("plating.cli.render_svg", fail_render_svg)
+    spec = {
+        "title": "demo",
+        "width": 40,
+        "height": 4,
+        "steps": [{"command": "echo hi", "output": "hi\n"}],
+        "scan_policy": "policies/public-repo.json",
+    }
+    spec_path = tmp_path / "spec.json"
+    spec_path.write_text(json.dumps(spec))
+    out = tmp_path / "out"
+
+    code = main(["render", str(spec_path), "--out-dir", str(out)])
+
+    assert code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "scan_policy" in captured.err
+    assert "scan_patterns" in captured.err
+    assert "Traceback" not in captured.err
+    assert not out.exists()
+
+
 # ---------------------------------------------------------------------------
 # Issue #12: shell=False, argv parsing, reject empty/malformed commands.
 # ---------------------------------------------------------------------------
