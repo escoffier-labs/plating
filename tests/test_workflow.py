@@ -484,3 +484,38 @@ def test_cli_workflow_malformed_scan_pattern_returns_two_without_traceback(
     assert "Traceback" not in captured.err
     assert "bad-pattern" in captured.err
     assert not (tmp_path / "pipeline.svg").exists()
+
+
+def test_cli_workflow_malformed_scan_pattern_shape_returns_two_without_traceback(
+    tmp_path, capsys
+):
+    data = _spec()
+    data["scan_patterns"] = [["missing-regex-only"]]
+    source = _write_spec(tmp_path, data)
+
+    code = main(["workflow", str(source)])
+
+    assert code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "Traceback" not in captured.err
+    assert "scan_patterns" in captured.err
+    assert not (tmp_path / "pipeline.svg").exists()
+
+
+def test_cli_workflow_rejects_unsupported_scan_policy_without_traceback(
+    tmp_path, capsys
+):
+    data = _spec()
+    data["scan_policy"] = "policies/public-repo.json"
+    source = _write_spec(tmp_path, data)
+
+    code = main(["workflow", str(source)])
+
+    assert code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "Traceback" not in captured.err
+    assert "scan_policy" in captured.err
+    assert "scan_patterns" in captured.err
+    assert not (tmp_path / "pipeline.svg").exists()

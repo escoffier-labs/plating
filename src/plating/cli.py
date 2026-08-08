@@ -87,9 +87,8 @@ def _render(args) -> int:
     cwd = args.cwd or data.get("cwd") or ""
     if cwd:
         prompt_ctx = f"{prompt_ctx}\n{cwd}"
-    extra = [(name, pat) for name, pat in (data.get("scan_patterns") or [])]
     try:
-        _validate_scan_patterns(extra)
+        extra = _load_scan_patterns(data)
     except WorkflowError as exc:
         print(f"plating: {exc}", file=sys.stderr)
         return 2
@@ -210,15 +209,44 @@ def _collect_string_values(value, out: list[str]) -> None:
             _collect_string_values(item, out)
 
 
-def _validate_scan_patterns(extra: list[tuple[str, str]]) -> None:
-    """Reject malformed user-supplied regular expressions."""
-    for name, pattern in extra:
+def _load_scan_patterns(data: dict) -> list[tuple[str, str]]:
+    """Return validated ``scan_patterns`` pairs, or raise ``WorkflowError``.
+
+    Rejects the unsupported ``scan_policy`` key (documented historically but
+    never implemented), bad list/pair shapes, non-string entries, and regexes
+    that fail to compile. Callers must run this before any scan or write.
+    """
+    if "scan_policy" in data:
+        raise WorkflowError(
+            "scan_policy is not supported; use scan_patterns "
+            "[[name, regex], ...] instead"
+        )
+    raw = data.get("scan_patterns", [])
+    if raw is None:
+        raw = []
+    if not isinstance(raw, list):
+        raise WorkflowError(
+            "scan_patterns must be a list of [name, regex] pairs"
+        )
+    extra: list[tuple[str, str]] = []
+    for index, entry in enumerate(raw):
+        if not isinstance(entry, (list, tuple)) or len(entry) != 2:
+            raise WorkflowError(
+                f"scan_patterns[{index}] must be a [name, regex] pair"
+            )
+        name, pattern = entry
+        if not isinstance(name, str) or not isinstance(pattern, str):
+            raise WorkflowError(
+                f"scan_patterns[{index}] name and regex must be strings"
+            )
         try:
             re.compile(pattern)
         except re.error as exc:
             raise WorkflowError(
                 f"scan_patterns entry {name!r} is not a valid regex: {exc}"
             ) from exc
+        extra.append((name, pattern))
+    return extra
 
 
 def _scan_workflow(data: dict, svg: str) -> list[tuple[str, str]]:
@@ -229,8 +257,7 @@ def _scan_workflow(data: dict, svg: str) -> list[tuple[str, str]]:
     would add backslashes and SVG escaping would turn quotes into ``&quot;``.
     The ``scan_patterns`` subtree is excluded so definitions cannot self-match.
     """
-    extra = [(name, pat) for name, pat in (data.get("scan_patterns") or [])]
-    _validate_scan_patterns(extra)
+    extra = _load_scan_patterns(data)
     findings: list[tuple[str, str]] = []
     seen: set[tuple[str, str]] = set()
     values: list[str] = []
