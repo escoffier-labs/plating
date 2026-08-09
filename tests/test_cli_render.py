@@ -509,6 +509,52 @@ def test_cli_allow_leaks_png_keeps_stdout_and_svg_count_consistent(
     assert (out / "demo.png").exists()
 
 
+def test_cli_allow_leaks_png_failure_still_publishes_override_provenance(
+    tmp_path, monkeypatch, capsys,
+):
+    """Issue #33: retained SVG must carry override metadata even when PNG fails."""
+    monkeypatch.setattr("plating.cli.render_svg", _write_clean_svg)
+
+    def fail_render_png(svg_path, png_path):
+        Path(png_path).unlink(missing_ok=True)
+        raise RenderError("chrome screenshot produced no file")
+
+    monkeypatch.setattr("plating.cli.render_png", fail_render_png)
+    secret_value = "fake-example-value"
+    spec = _base_spec(
+        steps=[{
+            "command": "cat config",
+            "output": f"API_TOKEN={secret_value}\n",
+        }],
+    )
+    spec_path = tmp_path / "spec.json"
+    spec_path.write_text(json.dumps(spec))
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "demo.png").write_text("stale")
+
+    exit_code = main([
+        "render", str(spec_path), "--out-dir", str(out), "--png", "100",
+        "--allow-leaks",
+    ])
+
+    captured = capsys.readouterr()
+    svg_retained = (out / "demo.svg").exists()
+    metadata_present = (
+        svg_retained
+        and 'id="plating-leak-override"' in (out / "demo.svg").read_text()
+    )
+    stdout_records_override = "leak override allowed" in captured.out
+
+    assert exit_code == 1
+    assert svg_retained is True
+    assert metadata_present is True
+    assert stdout_records_override is True
+    assert "chrome screenshot produced no file" in captured.err
+    assert "secret-assignment" in captured.err
+    assert not (out / "demo.png").exists()
+
+
 def test_cli_allow_leaks_missing_svg_root_fails_annotation(
     tmp_path, monkeypatch, capsys,
 ):
