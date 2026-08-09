@@ -235,6 +235,7 @@ def _render(args) -> int:
         _extend_unique_findings(allowed_findings, svg_findings)
     print(f"plating: wrote {svg_path}")
 
+    png_failed = False
     if args.png is not None:
         try:
             render_svg(cast_path, frame, width=opts.width, height=opts.height,
@@ -271,7 +272,7 @@ def _render(args) -> int:
         except RenderError as exc:
             png_path.unlink(missing_ok=True)
             print(f"plating: {exc}", file=sys.stderr)
-            return 1
+            png_failed = True
         finally:
             frame.unlink(missing_ok=True)
 
@@ -281,7 +282,7 @@ def _render(args) -> int:
         except (OSError, LeakOverrideAnnotationError) as exc:
             print(f"plating: {exc}", file=sys.stderr)
             return 2
-    return 0
+    return 1 if png_failed else 0
 
 
 def _scan(args) -> int:
