@@ -89,8 +89,8 @@ def prompt_patterns() -> list[tuple[str, str]]:
         # user@host identity baked into a prompt, including foreign FQDN hosts
         # such as ``alice@build.remote.example.com:~$ ``.
         ("prompt-user-host",
-         r"[A-Za-z][A-Za-z0-9._-]*@[A-Za-z](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
-         r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*(?=[:#$\s])"),
+         r"[A-Za-z][A-Za-z0-9._-]*@[A-Za-z](?:[A-Za-z0-9_-]{0,61}[A-Za-z0-9_])?"
+         r"(?:\.[A-Za-z0-9_](?:[A-Za-z0-9_-]{0,61}[A-Za-z0-9_])?)*(?=[:#$\s])"),
         # An absolute path that is not under /home/ or /Users/ (e.g. ``/etc/secret``).
         # This runs only against prompt/cwd content, never the cast header.
         ("prompt-non-home-absolute",
