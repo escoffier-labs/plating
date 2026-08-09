@@ -25,6 +25,11 @@ def test_prompt_patterns_flag_user_host_identity():
     assert any(name == "prompt-user-host" for name, _ in findings)
 
 
+def test_prompt_patterns_flag_underscore_in_hostname():
+    findings = scan("alice@my_host:~$ ", extra=prompt_patterns())
+    assert ("prompt-user-host", "alice@my_host") in findings
+
+
 @pytest.mark.parametrize("path", ["/etc/secret", "/opt/private", "/srv/app"])
 def test_prompt_patterns_flag_non_home_absolute_cwd(path):
     findings = scan(path, extra=prompt_patterns())
