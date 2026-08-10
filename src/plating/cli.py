@@ -244,37 +244,38 @@ def _render(args) -> int:
             frame.unlink(missing_ok=True)
             png_path.unlink(missing_ok=True)
             print(f"plating: {exc}", file=sys.stderr)
-            return 1
-        try:
-            frame_text = frame.read_text()
-        except OSError as exc:
-            frame.unlink(missing_ok=True)
-            png_path.unlink(missing_ok=True)
-            print(f"plating: {exc}", file=sys.stderr)
-            return 2
-        frame_findings = scan(frame_text, extra)
-        frame_findings.extend(scan_secrets(frame_text))
-        if frame_findings:
-            print("plating: leak scan found sensitive content in the rendered SVG:",
-                  file=sys.stderr)
-            for name, value in frame_findings:
-                print(f"  - {name}: {value}", file=sys.stderr)
-            if not args.allow_leaks:
+            png_failed = True
+        else:
+            try:
+                frame_text = frame.read_text()
+            except OSError as exc:
                 frame.unlink(missing_ok=True)
                 png_path.unlink(missing_ok=True)
-                print("plating: refusing to render. Add `normalize` rules to the spec, "
-                      "or pass --allow-leaks to override.", file=sys.stderr)
+                print(f"plating: {exc}", file=sys.stderr)
                 return 2
-            _extend_unique_findings(allowed_findings, frame_findings)
-        try:
-            rendered_png_path = render_png(frame, png_path)
-            print(f"plating: wrote {rendered_png_path}")
-        except RenderError as exc:
-            png_path.unlink(missing_ok=True)
-            print(f"plating: {exc}", file=sys.stderr)
-            png_failed = True
-        finally:
-            frame.unlink(missing_ok=True)
+            frame_findings = scan(frame_text, extra)
+            frame_findings.extend(scan_secrets(frame_text))
+            if frame_findings:
+                print("plating: leak scan found sensitive content in the rendered SVG:",
+                      file=sys.stderr)
+                for name, value in frame_findings:
+                    print(f"  - {name}: {value}", file=sys.stderr)
+                if not args.allow_leaks:
+                    frame.unlink(missing_ok=True)
+                    png_path.unlink(missing_ok=True)
+                    print("plating: refusing to render. Add `normalize` rules to the spec, "
+                          "or pass --allow-leaks to override.", file=sys.stderr)
+                    return 2
+                _extend_unique_findings(allowed_findings, frame_findings)
+            try:
+                rendered_png_path = render_png(frame, png_path)
+                print(f"plating: wrote {rendered_png_path}")
+            except RenderError as exc:
+                png_path.unlink(missing_ok=True)
+                print(f"plating: {exc}", file=sys.stderr)
+                png_failed = True
+            finally:
+                frame.unlink(missing_ok=True)
 
     if allowed_findings:
         try:
