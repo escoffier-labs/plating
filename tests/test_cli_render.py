@@ -555,6 +555,110 @@ def test_cli_allow_leaks_png_failure_still_publishes_override_provenance(
     assert not (out / "demo.png").exists()
 
 
+def test_cli_allow_leaks_frame_render_failure_still_publishes_override_provenance(
+    tmp_path, monkeypatch, capsys,
+):
+    """Issue #36: retained SVG must carry override metadata when frame render fails."""
+    calls = 0
+
+    def render_svg_with_frame_failure(cast_path, svg_path, **kwargs):
+        nonlocal calls
+        calls += 1
+        if kwargs.get("at") == 100:
+            Path(svg_path).write_text("<svg>partial</svg>")
+            raise RenderError("svg-term failed: frame boom")
+        Path(svg_path).write_text("<svg></svg>")
+        return Path(svg_path)
+
+    def fail_render_png(*args, **kwargs):
+        raise AssertionError("PNG rendering must not run after frame render failure")
+
+    monkeypatch.setattr("plating.cli.render_svg", render_svg_with_frame_failure)
+    monkeypatch.setattr("plating.cli.render_png", fail_render_png)
+    secret_value = "fake-example-value"
+    spec = _base_spec(
+        steps=[{
+            "command": "cat config",
+            "output": f"API_TOKEN={secret_value}\n",
+        }],
+    )
+    spec_path = tmp_path / "spec.json"
+    spec_path.write_text(json.dumps(spec))
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "demo.png").write_text("stale")
+
+    exit_code = main([
+        "render", str(spec_path), "--out-dir", str(out), "--png", "100",
+        "--allow-leaks",
+    ])
+
+    captured = capsys.readouterr()
+    svg_retained = (out / "demo.svg").exists()
+    metadata_present = (
+        svg_retained
+        and 'id="plating-leak-override"' in (out / "demo.svg").read_text()
+    )
+    stdout_records_override = "leak override allowed" in captured.out
+
+    assert exit_code == 1
+    assert svg_retained is True
+    assert metadata_present is True
+    assert stdout_records_override is True
+    assert "svg-term failed: frame boom" in captured.err
+    assert "secret-assignment" in captured.err
+    assert calls == 2
+    assert (out / "demo.svg").read_text().count('id="plating-leak-override"') == 1
+    assert not (out / "demo.frame.svg").exists()
+    assert not (out / "demo.png").exists()
+
+
+def test_cli_allow_leaks_frame_read_failure_still_publishes_override_provenance(
+    tmp_path, monkeypatch, capsys,
+):
+    """A retained SVG records its leak override when frame reading fails."""
+    original_read_text = Path.read_text
+
+    def render_svg_with_readable_base(cast_path, svg_path, **kwargs):
+        Path(svg_path).write_text("<svg></svg>")
+        return Path(svg_path)
+
+    def fail_frame_read(path, *args, **kwargs):
+        if path.name == "demo.frame.svg":
+            raise OSError("frame read denied")
+        return original_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr("plating.cli.render_svg", render_svg_with_readable_base)
+    monkeypatch.setattr(Path, "read_text", fail_frame_read)
+    secret_value = "fake-example-value"
+    spec = _base_spec(
+        steps=[{
+            "command": "cat config",
+            "output": f"API_TOKEN={secret_value}\n",
+        }],
+    )
+    spec_path = tmp_path / "spec.json"
+    spec_path.write_text(json.dumps(spec))
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "demo.png").write_text("stale")
+
+    code = main([
+        "render", str(spec_path), "--out-dir", str(out), "--png", "100",
+        "--allow-leaks",
+    ])
+
+    assert code == 1
+    captured = capsys.readouterr()
+    assert captured.out.count("plating: leak override allowed (1 finding)\n") == 1
+    assert "frame read denied" in captured.err
+    svg = (out / "demo.svg").read_text()
+    assert svg.count('id="plating-leak-override"') == 1
+    assert "finding-count=1" in svg
+    assert not (out / "demo.frame.svg").exists()
+    assert not (out / "demo.png").exists()
+
+
 def test_cli_allow_leaks_missing_svg_root_fails_annotation(
     tmp_path, monkeypatch, capsys,
 ):
