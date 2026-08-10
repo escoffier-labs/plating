@@ -28,11 +28,11 @@ jobs:
       - name: Test
         run: |
           pip install -e . pytest tomli
-          cat > /tmp/tomllib_shim.py <<'PY'
+          cat > "$RUNNER_TEMP/sitecustomize.py" <<'PY'
           import sys
           if sys.version_info < (3, 11):
               import tomli
               sys.modules["tomllib"] = tomli
           PY
-          export PYTHONSTARTUP=/tmp/tomllib_shim.py
+          export PYTHONPATH="$RUNNER_TEMP${PYTHONPATH:+:$PYTHONPATH}"
           pytest -q
