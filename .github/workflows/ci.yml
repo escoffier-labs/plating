@@ -27,5 +27,12 @@ jobs:
 
       - name: Test
         run: |
-          pip install -e . pytest
+          pip install -e . pytest tomli
+          cat > /tmp/tomllib_shim.py <<'PY'
+          import sys
+          if sys.version_info < (3, 11):
+              import tomli
+              sys.modules["tomllib"] = tomli
+          PY
+          export PYTHONSTARTUP=/tmp/tomllib_shim.py
           pytest -q
