@@ -803,3 +803,99 @@ def test_geometry_routes_are_deterministic():
     assert route_workflow_edges(positions, node_columns, edges) == route_workflow_edges(
         positions, node_columns, edges
     )
+
+
+# --- Repair regressions for issue #23 draft PR defects ---
+
+HISTORICAL_FORWARD_CROSSING_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540" role="img" aria-labelledby="workflow-title workflow-desc">\n  <title id="workflow-title">Forward cross</title>\n  <desc id="workflow-desc">valid forward spanning columns</desc>\n  <defs>\n    <linearGradient id="workflow-bg" x1="0" y1="0" x2="1" y2="1">\n      <stop offset="0" stop-color="#0d1014"/>\n      <stop offset="1" stop-color="#0f1318"/>\n    </linearGradient>\n    <linearGradient id="workflow-card" x1="0" y1="0" x2="0" y2="1">\n      <stop offset="0" stop-color="#11161c"/>\n      <stop offset="1" stop-color="#0f1318"/>\n    </linearGradient>\n    <filter id="workflow-shadow" x="-10%" y="-10%" width="120%" height="130%">\n      <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#000000" flood-opacity="0.38"/>\n    </filter>\n    <marker id="workflow-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">\n      <path d="M0,0 L8,4 L0,8 Z" fill="#e0a45c"/>\n    </marker>\n  </defs>\n  <rect width="960" height="540" fill="url(#workflow-bg)"/>\n  <circle cx="872" cy="52" r="220" fill="#e0a45c" opacity="0.07"/>\n  <circle cx="62" cy="506" r="180" fill="#e0a45c" opacity="0.04"/>\n  <rect x="36" y="28" width="888" height="484" rx="20" fill="url(#workflow-card)" stroke="#2a323d" filter="url(#workflow-shadow)"/>\n  <rect x="36" y="28" width="5" height="484" rx="2.5" fill="#e0a45c"/>\n  <text x="72" y="67" fill="#e0a45c" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="11" font-weight="600" letter-spacing="2.4">TEST</text>\n  <text x="72" y="96" fill="#dde3ea" font-family="Inter, ui-sans-serif, sans-serif" font-size="21" font-weight="700" letter-spacing="-0.6">Forward cross</text>\n  <text x="72" y="119" fill="#9aa4b2" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="11">valid forward spanning columns</text>\n  <line x1="72" y1="139" x2="888" y2="139" stroke="#1e242c"/>\n  <text x="72.0" y="164" fill="#e0a45c" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="10" font-weight="600" letter-spacing="1.7">A</text>\n  <text x="354.0" y="164" fill="#e0a45c" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="10" font-weight="600" letter-spacing="1.7">B</text>\n  <text x="636.0" y="164" fill="#e0a45c" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="10" font-weight="600" letter-spacing="1.7">C</text>\n  <line class="workflow-edge" x1="324.0" y1="312.0" x2="636.0" y2="312.0" stroke="#e0a45c" stroke-width="1.5" opacity="0.9" marker-end="url(#workflow-arrow)"/>\n  <rect x="72.0" y="196.0" width="252.0" height="68" rx="12" fill="#11161c" stroke="#2a323d"/>\n  <text class="workflow-node-label" x="88.0" y="225.0" fill="#dde3ea" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="14" font-weight="600">n0_0</text>\n  <rect x="72.0" y="278.0" width="252.0" height="68" rx="12" fill="#11161c" stroke="#2a323d"/>\n  <text class="workflow-node-label" x="88.0" y="307.0" fill="#dde3ea" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="14" font-weight="600">n0_1</text>\n  <rect x="354.0" y="196.0" width="252.0" height="68" rx="12" fill="#11161c" stroke="#2a323d"/>\n  <text class="workflow-node-label" x="370.0" y="225.0" fill="#dde3ea" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="14" font-weight="600">n1_0</text>\n  <rect x="354.0" y="278.0" width="252.0" height="68" rx="12" fill="#11161c" stroke="#2a323d"/>\n  <text class="workflow-node-label" x="370.0" y="307.0" fill="#dde3ea" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="14" font-weight="600">n1_1</text>\n  <rect x="636.0" y="196.0" width="252.0" height="68" rx="12" fill="#11161c" stroke="#2a323d"/>\n  <text class="workflow-node-label" x="652.0" y="225.0" fill="#dde3ea" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="14" font-weight="600">n2_0</text>\n  <rect x="636.0" y="278.0" width="252.0" height="68" rx="12" fill="#11161c" stroke="#2a323d"/>\n  <text class="workflow-node-label" x="652.0" y="307.0" fill="#dde3ea" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="14" font-weight="600">n2_1</text>\n</svg>\n'
+
+
+def _forward_crossing_spec():
+    return {
+        "title": "Forward cross",
+        "eyebrow": "TEST",
+        "description": "valid forward spanning columns",
+        "columns": [
+            {
+                "title": "A",
+                "nodes": [
+                    {"id": "n0_0", "label": "n0_0"},
+                    {"id": "n0_1", "label": "n0_1"},
+                ],
+            },
+            {
+                "title": "B",
+                "nodes": [
+                    {"id": "n1_0", "label": "n1_0"},
+                    {"id": "n1_1", "label": "n1_1"},
+                ],
+            },
+            {
+                "title": "C",
+                "nodes": [
+                    {"id": "n2_0", "label": "n2_0"},
+                    {"id": "n2_1", "label": "n2_1"},
+                ],
+            },
+        ],
+        "edges": [{"from": "n0_1", "to": "n2_1"}],
+    }
+
+
+def test_geometry_forward_spanning_preserves_historical_svg_bytes():
+    """Already-valid forward edges keep base 067718c SVG bytes, including spans."""
+    svg = render_workflow(_forward_crossing_spec())
+    assert svg == HISTORICAL_FORWARD_CROSSING_SVG
+    assert (
+        '<line class="workflow-edge" x1="324.0" y1="312.0" '
+        'x2="636.0" y2="312.0"'
+    ) in svg
+    assert '<polyline class="workflow-edge"' not in svg
+
+
+def test_geometry_same_column_parallel_and_cycle_do_not_overlap():
+    """Parallel and reverse-cycle same-column routes keep anchors but not paths."""
+    positions = {
+        "a": (100.0, 100.0, 80.0, 40.0),
+        "b": (100.0, 200.0, 80.0, 40.0),
+    }
+    node_columns = {"a": 0, "b": 0}
+
+    parallel = route_workflow_edges(
+        positions,
+        node_columns,
+        [{"from": "a", "to": "b"}, {"from": "a", "to": "b"}],
+    )
+    assert parallel[0].points[0] == pytest.approx((140.0, 140.0))
+    assert parallel[0].points[-1] == pytest.approx((140.0, 200.0))
+    assert parallel[1].points[0] == pytest.approx((140.0, 140.0))
+    assert parallel[1].points[-1] == pytest.approx((140.0, 200.0))
+    assert parallel[0].points != parallel[1].points
+    _assert_route_avoids_nodes(parallel[0].points, positions, "a", "b")
+    _assert_route_avoids_nodes(parallel[1].points, positions, "a", "b")
+
+    cycle = route_workflow_edges(
+        positions,
+        node_columns,
+        [{"from": "a", "to": "b"}, {"from": "b", "to": "a"}],
+    )
+    assert cycle[0].points[0] == pytest.approx((140.0, 140.0))
+    assert cycle[0].points[-1] == pytest.approx((140.0, 200.0))
+    assert cycle[1].points[0] == pytest.approx((140.0, 200.0))
+    assert cycle[1].points[-1] == pytest.approx((140.0, 140.0))
+    # Geometric non-overlap: not the same polyline and not the exact reverse.
+    assert cycle[0].points != cycle[1].points
+    assert cycle[1].points != tuple(reversed(cycle[0].points))
+    _assert_route_avoids_nodes(cycle[0].points, positions, "a", "b")
+    _assert_route_avoids_nodes(cycle[1].points, positions, "b", "a")
+
+
+def test_geometry_missing_edge_endpoint_raises_workflow_error():
+    positions = {
+        "a": (100.0, 100.0, 80.0, 40.0),
+        "b": (100.0, 200.0, 80.0, 40.0),
+    }
+    node_columns = {"a": 0, "b": 0}
+    with pytest.raises(WorkflowError, match=r"edges\[0\]\.to") as exc_info:
+        route_workflow_edges(positions, node_columns, [{"from": "a"}])
+    assert "KeyError" not in type(exc_info.value).__name__

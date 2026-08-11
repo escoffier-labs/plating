@@ -372,6 +372,9 @@ def _same_column_route(
     positions: dict[str, tuple[float, float, float, float]],
     node_columns: dict[str, int],
     lane_index: int,
+    *,
+    lane_count: int = 1,
+    use_right_side: bool = False,
 ) -> tuple[tuple[float, float], ...]:
     above = _same_column_source_is_above(source_id, target_id, source, target)
     if above:
@@ -380,15 +383,44 @@ def _same_column_route(
     else:
         start = (source[0] + source[2] / 2, source[1])
         end = (target[0] + target[2] / 2, target[1] + target[3])
-    if not _same_column_intervening(positions, node_columns, source_id, target_id):
-        direct = (start, end)
-        if not _route_hits_nodes(direct, positions, source_id, target_id):
-            return direct
+    intervening = _same_column_intervening(
+        positions, node_columns, source_id, target_id
+    )
+    direct = (start, end)
+    force_side = lane_count > 1 or use_right_side
+    if (
+        not force_side
+        and not intervening
+        and not _route_hits_nodes(direct, positions, source_id, target_id)
+    ):
+        return direct
     # Detour through a deterministic exterior side lane beside the column.
-    side_x = source[0] - _EDGE_STUB - lane_index * _LANE_GAP
-    if side_x < 0:
+    # Parallel edges share a side with lane offsets; cycle companions use
+    # opposite sides so paths are not exact reverses.
+    if use_right_side:
         side_x = source[0] + source[2] + _EDGE_STUB + lane_index * _LANE_GAP
+    else:
+        side_x = source[0] - _EDGE_STUB - lane_index * _LANE_GAP
+        if side_x < 0:
+            side_x = source[0] + source[2] + _EDGE_STUB + lane_index * _LANE_GAP
     return (start, (side_x, start[1]), (side_x, end[1]), end)
+
+
+def _validate_route_edges(edges) -> list[dict]:
+    """Validate edge objects before lane assignment or geometry lookup."""
+    if not isinstance(edges, list):
+        raise WorkflowError("edges must be a list")
+    normalized: list[dict] = []
+    for edge_index, edge in enumerate(edges):
+        if not isinstance(edge, dict):
+            raise WorkflowError(f"edges[{edge_index}] must be an object")
+        source = _required_identifier(edge.get("from"), f"edges[{edge_index}].from")
+        target = _required_identifier(edge.get("to"), f"edges[{edge_index}].to")
+        item = dict(edge)
+        item["from"] = source
+        item["to"] = target
+        normalized.append(item)
+    return normalized
 
 
 def _assign_lane_indices(edges: list[dict]) -> list[int]:
@@ -412,6 +444,12 @@ def _lane_counts(edges: list[dict]) -> list[int]:
     return [counts_by_key[(edge["from"], edge["to"])] for edge in edges]
 
 
+def _has_reverse_edge(edges: list[dict], source_id: str, target_id: str) -> bool:
+    return any(
+        edge["from"] == target_id and edge["to"] == source_id for edge in edges
+    )
+
+
 def route_workflow_edges(
     positions: dict[str, tuple[float, float, float, float]],
     node_columns: dict[str, int],
@@ -419,19 +457,17 @@ def route_workflow_edges(
 ) -> list[EdgeRoute]:
     """Route edges with collision-free anchors and deterministic exterior lanes.
 
-    Forward edges keep right-center → left-center straight lines when a single
-    clear path exists. Backward edges leave the source left-center and enter the
-    target right-center via exterior lanes. Same-column edges use top/bottom
-    centers ordered by node center with a stable id tie-break.
+    Forward edges keep the historical right-center → left-center geometry and
+    are not redefined when they span intermediate columns. Backward edges leave
+    the source left-center and enter the target right-center via exterior lanes.
+    Same-column edges use top/bottom centers ordered by node center with a
+    stable id tie-break, plus lane offsets for parallels and cycle pairs.
     """
-    if not isinstance(edges, list):
-        raise WorkflowError("edges must be a list")
+    edges = _validate_route_edges(edges)
     lanes = _assign_lane_indices(edges)
     counts = _lane_counts(edges)
     routes: list[EdgeRoute] = []
     for edge_index, edge in enumerate(edges):
-        if not isinstance(edge, dict):
-            raise WorkflowError(f"edges[{edge_index}] must be an object")
         source_id = edge["from"]
         target_id = edge["to"]
         if source_id not in positions or target_id not in positions:
@@ -445,36 +481,22 @@ def route_workflow_edges(
         lane_index = lanes[edge_index]
         lane_count = counts[edge_index]
         if source_col < target_col:
+            # Do not redefine already-valid forward geometry (byte-identical).
             points = _forward_route(source, target, lane_index, lane_count)
-            if _route_hits_nodes(points, positions, source_id, target_id):
-                # Detour via exterior lane while preserving endpoint anchors.
-                prefer_top = _center(source)[1] <= _NODE_TOP + _NODE_BAND / 2
-                x1 = source[0] + source[2]
-                y1 = source[1] + source[3] / 2
-                x2 = target[0]
-                y2 = target[1] + target[3] / 2
-                exit_x = x1 + _EDGE_STUB
-                enter_x = x2 - _EDGE_STUB
-                lane = _lane_y(lane_index, prefer_top=prefer_top)
-                points = (
-                    (x1, y1),
-                    (exit_x, y1),
-                    (exit_x, lane),
-                    (enter_x, lane),
-                    (enter_x, y2),
-                    (x2, y2),
+            if len(points) < 2:
+                raise WorkflowError(
+                    f"edge geometry for {source_id} -> {target_id} produced no path"
                 )
+            for x, y in points:
+                if not (0.0 <= x <= _CANVAS_WIDTH and 0.0 <= y <= _CANVAS_HEIGHT):
+                    raise WorkflowError(
+                        f"edge geometry for {source_id} -> {target_id} leaves the canvas"
+                    )
         elif source_col > target_col:
             prefer_top = _center(source)[1] <= _NODE_TOP + _NODE_BAND / 2
             # Cycle companions: offset backward lanes so they never share the
             # forward straight path's y.
-            cycle_boost = 0
-            reverse_key = (target_id, source_id)
-            if any(
-                other.get("from") == reverse_key[0] and other.get("to") == reverse_key[1]
-                for other in edges
-            ):
-                cycle_boost = 1
+            cycle_boost = 1 if _has_reverse_edge(edges, source_id, target_id) else 0
             points = _backward_route(
                 source,
                 target,
@@ -488,7 +510,11 @@ def route_workflow_edges(
                     lane_index + cycle_boost,
                     prefer_top=not prefer_top,
                 )
+            _assert_route_clear(points, positions, source_id, target_id)
         else:
+            has_cycle = _has_reverse_edge(edges, source_id, target_id)
+            # Cycle companions take opposite side lanes so paths are not exact
+            # reverses; parallel same-column edges share a side with offsets.
             points = _same_column_route(
                 source_id,
                 target_id,
@@ -497,8 +523,10 @@ def route_workflow_edges(
                 positions,
                 node_columns,
                 lane_index,
+                lane_count=max(lane_count, 2) if has_cycle else lane_count,
+                use_right_side=has_cycle and source_id > target_id,
             )
-        _assert_route_clear(points, positions, source_id, target_id)
+            _assert_route_clear(points, positions, source_id, target_id)
         routes.append(EdgeRoute(points=points))
     return routes
 
