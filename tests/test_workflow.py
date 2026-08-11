@@ -899,3 +899,51 @@ def test_geometry_missing_edge_endpoint_raises_workflow_error():
     with pytest.raises(WorkflowError, match=r"edges\[0\]\.to") as exc_info:
         route_workflow_edges(positions, node_columns, [{"from": "a"}])
     assert "KeyError" not in type(exc_info.value).__name__
+
+
+
+HISTORICAL_DUPLICATE_FORWARD_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540" role="img" aria-labelledby="workflow-title workflow-desc">\n  <title id="workflow-title">Dup forward</title>\n  <desc id="workflow-desc">duplicate valid forward edges</desc>\n  <defs>\n    <linearGradient id="workflow-bg" x1="0" y1="0" x2="1" y2="1">\n      <stop offset="0" stop-color="#0d1014"/>\n      <stop offset="1" stop-color="#0f1318"/>\n    </linearGradient>\n    <linearGradient id="workflow-card" x1="0" y1="0" x2="0" y2="1">\n      <stop offset="0" stop-color="#11161c"/>\n      <stop offset="1" stop-color="#0f1318"/>\n    </linearGradient>\n    <filter id="workflow-shadow" x="-10%" y="-10%" width="120%" height="130%">\n      <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#000000" flood-opacity="0.38"/>\n    </filter>\n    <marker id="workflow-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">\n      <path d="M0,0 L8,4 L0,8 Z" fill="#e0a45c"/>\n    </marker>\n  </defs>\n  <rect width="960" height="540" fill="url(#workflow-bg)"/>\n  <circle cx="872" cy="52" r="220" fill="#e0a45c" opacity="0.07"/>\n  <circle cx="62" cy="506" r="180" fill="#e0a45c" opacity="0.04"/>\n  <rect x="36" y="28" width="888" height="484" rx="20" fill="url(#workflow-card)" stroke="#2a323d" filter="url(#workflow-shadow)"/>\n  <rect x="36" y="28" width="5" height="484" rx="2.5" fill="#e0a45c"/>\n  <text x="72" y="67" fill="#e0a45c" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="11" font-weight="600" letter-spacing="2.4">TEST</text>\n  <text x="72" y="96" fill="#dde3ea" font-family="Inter, ui-sans-serif, sans-serif" font-size="21" font-weight="700" letter-spacing="-0.6">Dup forward</text>\n  <text x="72" y="119" fill="#9aa4b2" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="11">duplicate valid forward edges</text>\n  <line x1="72" y1="139" x2="888" y2="139" stroke="#1e242c"/>\n  <text x="72.0" y="164" fill="#e0a45c" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="10" font-weight="600" letter-spacing="1.7">A</text>\n  <text x="495.0" y="164" fill="#e0a45c" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="10" font-weight="600" letter-spacing="1.7">B</text>\n  <line class="workflow-edge" x1="465.0" y1="271.0" x2="495.0" y2="271.0" stroke="#e0a45c" stroke-width="1.5" opacity="0.9" marker-end="url(#workflow-arrow)"/>\n  <line class="workflow-edge" x1="465.0" y1="271.0" x2="495.0" y2="271.0" stroke="#e0a45c" stroke-width="1.5" opacity="0.9" marker-end="url(#workflow-arrow)"/>\n  <rect x="72.0" y="237.0" width="393.0" height="68" rx="12" fill="#11161c" stroke="#2a323d"/>\n  <text class="workflow-node-label" x="88.0" y="266.0" fill="#dde3ea" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="14" font-weight="600">left</text>\n  <rect x="495.0" y="237.0" width="393.0" height="68" rx="12" fill="#11161c" stroke="#2a323d"/>\n  <text class="workflow-node-label" x="511.0" y="266.0" fill="#dde3ea" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="14" font-weight="600">right</text>\n</svg>\n'
+
+
+def _duplicate_forward_spec():
+    return {
+        "title": "Dup forward",
+        "eyebrow": "TEST",
+        "description": "duplicate valid forward edges",
+        "columns": [
+            {"title": "A", "nodes": [{"id": "left", "label": "left"}]},
+            {"title": "B", "nodes": [{"id": "right", "label": "right"}]},
+        ],
+        "edges": [
+            {"from": "left", "to": "right"},
+            {"from": "left", "to": "right"},
+        ],
+    }
+
+
+def test_geometry_duplicate_forward_preserves_historical_svg_bytes():
+    """Duplicate valid forward edges keep base identical line elements."""
+    svg = render_workflow(_duplicate_forward_spec())
+    assert svg == HISTORICAL_DUPLICATE_FORWARD_SVG
+    root = ET.fromstring(svg)
+    edges = root.findall('.//svg:line[@class="workflow-edge"]', _NS)
+    assert len(edges) == 2
+    for edge in edges:
+        assert edge.attrib["x1"] == "465.0"
+        assert edge.attrib["y1"] == "271.0"
+        assert edge.attrib["x2"] == "495.0"
+        assert edge.attrib["y2"] == "271.0"
+    assert root.findall('.//svg:polyline[@class="workflow-edge"]', _NS) == []
+
+
+def test_geometry_missing_node_column_raises_workflow_error():
+    positions = {
+        "a": (100.0, 100.0, 80.0, 40.0),
+        "b": (300.0, 100.0, 80.0, 40.0),
+    }
+    node_columns = {"a": 0}  # b present in positions but missing here
+    with pytest.raises(WorkflowError, match="edge geometry") as exc_info:
+        route_workflow_edges(positions, node_columns, [{"from": "a", "to": "b"}])
+    message = str(exc_info.value)
+    assert "b" in message
+    assert type(exc_info.value).__name__ == "WorkflowError"

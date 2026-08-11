@@ -281,27 +281,20 @@ def _lane_y(lane_index: int, *, prefer_top: bool) -> float:
 def _forward_route(
     source: tuple[float, float, float, float],
     target: tuple[float, float, float, float],
-    lane_index: int,
-    lane_count: int,
+    lane_index: int = 0,
+    lane_count: int = 1,
 ) -> tuple[tuple[float, float], ...]:
+    """Historical forward geometry: always a straight right-center → left-center line.
+
+    Lane offsets are intentionally ignored. Duplicate/parallel forward edges keep
+    the base renderer bytes; stable lanes apply only to backward/same-column routes.
+    """
+    del lane_index, lane_count
     x1 = source[0] + source[2]
     y1 = source[1] + source[3] / 2
     x2 = target[0]
     y2 = target[1] + target[3] / 2
-    if lane_count <= 1:
-        return ((x1, y1), (x2, y2))
-    offset = (lane_index - (lane_count - 1) / 2) * _LANE_GAP
-    if offset == 0:
-        return ((x1, y1), (x2, y2))
-    mid_y = (y1 + y2) / 2 + offset
-    return (
-        (x1, y1),
-        (x1 + _EDGE_STUB, y1),
-        (x1 + _EDGE_STUB, mid_y),
-        (x2 - _EDGE_STUB, mid_y),
-        (x2 - _EDGE_STUB, y2),
-        (x2, y2),
-    )
+    return ((x1, y1), (x2, y2))
 
 
 def _backward_route(
@@ -473,6 +466,12 @@ def route_workflow_edges(
         if source_id not in positions or target_id not in positions:
             raise WorkflowError(
                 f"edge {source_id} -> {target_id} references an unknown node"
+            )
+        if source_id not in node_columns or target_id not in node_columns:
+            missing = target_id if target_id not in node_columns else source_id
+            raise WorkflowError(
+                f"edge geometry for {source_id} -> {target_id}: "
+                f"node_columns missing {missing}"
             )
         source = positions[source_id]
         target = positions[target_id]
