@@ -4,7 +4,12 @@ import xml.etree.ElementTree as ET
 import pytest
 
 from plating.cli import main
-from plating.workflow import WorkflowError, render_workflow
+from plating.workflow import (
+    WorkflowError,
+    compute_workflow_layout,
+    render_workflow,
+    route_workflow_edges,
+)
 
 
 def _spec():
@@ -519,3 +524,282 @@ def test_cli_workflow_rejects_unsupported_scan_policy_without_traceback(
     assert "scan_policy" in captured.err
     assert "scan_patterns" in captured.err
     assert not (tmp_path / "pipeline.svg").exists()
+
+
+# --- Issue #23: edge geometry matrix (helpers; contract stays forward-only) ---
+
+_NS = {"svg": "http://www.w3.org/2000/svg"}
+
+
+def _boxes(positions):
+    return {
+        node_id: (x, y, x + w, y + h)
+        for node_id, (x, y, w, h) in positions.items()
+    }
+
+
+def _segment_hits_box(x1, y1, x2, y2, left, top, right, bottom, *, endpoint_ok=False):
+    """Return True if open segment (x1,y1)-(x2,y2) intersects the box interior."""
+    # Reject if either endpoint lies strictly inside the box.
+    for px, py in ((x1, y1), (x2, y2)):
+        if left < px < right and top < py < bottom:
+            return True
+    # Liang-Barsky style clip against expanded-open box (edges count as exterior).
+    dx = x2 - x1
+    dy = y2 - y1
+    p = (-dx, dx, -dy, dy)
+    q = (x1 - left, right - x1, y1 - top, bottom - y1)
+    u1, u2 = 0.0, 1.0
+    for pi, qi in zip(p, q):
+        if pi == 0:
+            if qi < 0:
+                return False
+            continue
+        t = qi / pi
+        if pi < 0:
+            if t > u2:
+                return False
+            if t > u1:
+                u1 = t
+        else:
+            if t < u1:
+                return False
+            if t < u2:
+                u2 = t
+    if u1 >= u2:
+        return False
+    # Touching only at u=0 or u=1 (endpoint on boundary) is allowed when endpoint_ok.
+    if endpoint_ok and ((u1 == 0.0 and u2 == 0.0) or (u1 == 1.0 and u2 == 1.0)):
+        return False
+    # Intersection with interior of parametric range.
+    mid = (u1 + u2) / 2
+    mx = x1 + mid * dx
+    my = y1 + mid * dy
+    return left < mx < right and top < my < bottom
+
+
+def _assert_route_avoids_nodes(points, positions, source_id, target_id):
+    boxes = _boxes(positions)
+    for i in range(len(points) - 1):
+        x1, y1 = points[i]
+        x2, y2 = points[i + 1]
+        for node_id, (left, top, right, bottom) in boxes.items():
+            if node_id in (source_id, target_id):
+                # Endpoints may sit on the source/target anchor; other segments
+                # must still stay outside the node interior.
+                if i == 0 and node_id == source_id:
+                    continue
+                if i == len(points) - 2 and node_id == target_id:
+                    continue
+            assert not _segment_hits_box(
+                x1, y1, x2, y2, left, top, right, bottom
+            ), f"segment {i} crosses node {node_id}"
+
+
+def _layout_columns(columns):
+    data = {
+        "title": "Geometry",
+        "eyebrow": "TEST",
+        "description": "geometry fixture",
+        "columns": columns,
+        "edges": [],
+    }
+    return compute_workflow_layout(data)
+
+
+def test_geometry_forward_edge_unchanged_byte_for_byte():
+    """Simple forward edges keep the historical straight-line SVG bytes."""
+    first = render_workflow(_spec())
+    second = render_workflow(_spec())
+    assert first == second
+    root = ET.fromstring(first)
+    edges = root.findall('.//svg:line[@class="workflow-edge"]', _NS)
+    assert len(edges) == 2
+    assert edges[0].attrib["x1"] == "324.0"
+    assert edges[0].attrib["y1"] == "271.0"
+    assert edges[0].attrib["x2"] == "354.0"
+    assert edges[0].attrib["y2"] == "271.0"
+    assert edges[1].attrib["x1"] == "606.0"
+    assert edges[1].attrib["y1"] == "271.0"
+    assert edges[1].attrib["x2"] == "636.0"
+    assert edges[1].attrib["y2"] == "271.0"
+    assert root.findall('.//svg:polyline[@class="workflow-edge"]', _NS) == []
+    assert root.findall('.//svg:path[@class="workflow-edge"]', _NS) == []
+
+
+def test_geometry_backward_edge_uses_left_to_right_exterior_lane():
+    columns = [
+        {"title": "A", "nodes": [{"id": "left", "label": "left"}]},
+        {"title": "B", "nodes": [{"id": "right", "label": "right"}]},
+    ]
+    positions, node_columns = _layout_columns(columns)
+    routes = route_workflow_edges(
+        positions,
+        node_columns,
+        [{"from": "right", "to": "left"}],
+    )
+    assert len(routes) == 1
+    points = routes[0].points
+    src = positions["right"]
+    tgt = positions["left"]
+    assert points[0] == pytest.approx((src[0], src[1] + src[3] / 2))
+    assert points[-1] == pytest.approx((tgt[0] + tgt[2], tgt[1] + tgt[3] / 2))
+    assert len(points) >= 4
+    _assert_route_avoids_nodes(points, positions, "right", "left")
+
+
+def test_geometry_same_column_uses_vertical_anchors_by_center():
+    columns = [
+        {
+            "title": "A",
+            "nodes": [
+                {"id": "top", "label": "top"},
+                {"id": "bottom", "label": "bottom"},
+            ],
+        },
+        {"title": "B", "nodes": [{"id": "other", "label": "other"}]},
+    ]
+    positions, node_columns = _layout_columns(columns)
+    down = route_workflow_edges(
+        positions, node_columns, [{"from": "top", "to": "bottom"}]
+    )[0].points
+    up = route_workflow_edges(
+        positions, node_columns, [{"from": "bottom", "to": "top"}]
+    )[0].points
+    top = positions["top"]
+    bottom = positions["bottom"]
+    assert down[0] == pytest.approx((top[0] + top[2] / 2, top[1] + top[3]))
+    assert down[-1] == pytest.approx((bottom[0] + bottom[2] / 2, bottom[1]))
+    assert up[0] == pytest.approx((bottom[0] + bottom[2] / 2, bottom[1]))
+    assert up[-1] == pytest.approx((top[0] + top[2] / 2, top[1] + top[3]))
+    _assert_route_avoids_nodes(down, positions, "top", "bottom")
+    _assert_route_avoids_nodes(up, positions, "bottom", "top")
+
+
+def test_geometry_same_column_center_tie_breaks_by_node_id():
+    # Force equal centers by feeding synthetic boxes with identical cy.
+    positions = {
+        "a-node": (100.0, 200.0, 80.0, 40.0),
+        "b-node": (100.0, 200.0, 80.0, 40.0),
+    }
+    node_columns = {"a-node": 0, "b-node": 0}
+    # Identical centers: lower id leaves via bottom when id orders a < b? 
+    # Stable rule: when cy equal, the lexicographically smaller id is treated
+    # as "above" so it exits bottom toward the other.
+    route = route_workflow_edges(
+        positions, node_columns, [{"from": "a-node", "to": "b-node"}]
+    )[0].points
+    assert route[0] == pytest.approx((140.0, 240.0))  # bottom-center of a
+    assert route[-1] == pytest.approx((140.0, 200.0))  # top-center of b
+
+
+def test_geometry_parallel_edges_get_stable_lane_offsets():
+    columns = [
+        {"title": "A", "nodes": [{"id": "left", "label": "left"}]},
+        {"title": "B", "nodes": [{"id": "right", "label": "right"}]},
+    ]
+    positions, node_columns = _layout_columns(columns)
+    edges = [
+        {"from": "right", "to": "left", "label": "one"},
+        {"from": "right", "to": "left", "label": "two"},
+    ]
+    first = route_workflow_edges(positions, node_columns, edges)
+    second = route_workflow_edges(positions, node_columns, edges)
+    assert first[0].points == second[0].points
+    assert first[1].points == second[1].points
+    assert first[0].points != first[1].points
+    _assert_route_avoids_nodes(first[0].points, positions, "right", "left")
+    _assert_route_avoids_nodes(first[1].points, positions, "right", "left")
+
+
+def test_geometry_two_node_cycle_pair_uses_distinct_lanes():
+    columns = [
+        {"title": "A", "nodes": [{"id": "left", "label": "left"}]},
+        {"title": "B", "nodes": [{"id": "right", "label": "right"}]},
+    ]
+    positions, node_columns = _layout_columns(columns)
+    edges = [
+        {"from": "left", "to": "right"},
+        {"from": "right", "to": "left"},
+    ]
+    routes = route_workflow_edges(positions, node_columns, edges)
+    assert routes[0].points != routes[1].points
+    # Forward stays right-center -> left-center endpoints.
+    src = positions["left"]
+    tgt = positions["right"]
+    assert routes[0].points[0] == pytest.approx((src[0] + src[2], src[1] + src[3] / 2))
+    assert routes[0].points[-1] == pytest.approx((tgt[0], tgt[1] + tgt[3] / 2))
+    assert routes[1].points[0] == pytest.approx((tgt[0], tgt[1] + tgt[3] / 2))
+    assert routes[1].points[-1] == pytest.approx((src[0] + src[2], src[1] + src[3] / 2))
+    for route, frm, to in (
+        (routes[0], "left", "right"),
+        (routes[1], "right", "left"),
+    ):
+        _assert_route_avoids_nodes(route.points, positions, frm, to)
+
+
+def test_geometry_same_column_routes_around_intervening_node():
+    columns = [
+        {
+            "title": "A",
+            "nodes": [
+                {"id": "top", "label": "top"},
+                {"id": "mid", "label": "mid"},
+                {"id": "bottom", "label": "bottom"},
+            ],
+        },
+        {"title": "B", "nodes": [{"id": "other", "label": "other"}]},
+    ]
+    positions, node_columns = _layout_columns(columns)
+    points = route_workflow_edges(
+        positions, node_columns, [{"from": "top", "to": "bottom"}]
+    )[0].points
+    assert len(points) >= 4
+    _assert_route_avoids_nodes(points, positions, "top", "bottom")
+    # Must not be a direct vertical through mid.
+    mid = positions["mid"]
+    mid_box = (mid[0], mid[1], mid[0] + mid[2], mid[1] + mid[3])
+    for i in range(len(points) - 1):
+        assert not _segment_hits_box(
+            points[i][0],
+            points[i][1],
+            points[i + 1][0],
+            points[i + 1][1],
+            *mid_box,
+        )
+
+
+def test_geometry_impossible_route_raises_explicit_diagnostic():
+    # Overlapping boxes leave no exterior clearance for a backward stub.
+    positions = {
+        "a": (0.0, 0.0, 960.0, 540.0),
+        "b": (0.0, 0.0, 960.0, 540.0),
+    }
+    node_columns = {"a": 1, "b": 0}
+    with pytest.raises(WorkflowError, match="edge geometry"):
+        route_workflow_edges(positions, node_columns, [{"from": "a", "to": "b"}])
+
+
+def test_geometry_routes_are_deterministic():
+    columns = [
+        {
+            "title": "A",
+            "nodes": [
+                {"id": "a1", "label": "a1"},
+                {"id": "a2", "label": "a2"},
+            ],
+        },
+        {"title": "B", "nodes": [{"id": "b1", "label": "b1"}]},
+        {"title": "C", "nodes": [{"id": "c1", "label": "c1"}]},
+    ]
+    positions, node_columns = _layout_columns(columns)
+    edges = [
+        {"from": "a1", "to": "b1"},
+        {"from": "c1", "to": "a1"},
+        {"from": "a1", "to": "a2"},
+        {"from": "b1", "to": "c1"},
+        {"from": "c1", "to": "b1"},
+    ]
+    assert route_workflow_edges(positions, node_columns, edges) == route_workflow_edges(
+        positions, node_columns, edges
+    )

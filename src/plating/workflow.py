@@ -1,6 +1,7 @@
 """Render constrained workflow specifications as deterministic SVGs."""
 from __future__ import annotations
 
+from dataclasses import dataclass
 from xml.sax.saxutils import escape
 
 
@@ -21,10 +22,33 @@ ACCENT = "#e0a45c"
 HAIRLINE = "#1e242c"
 HAIRLINE_STRONG = "#2a323d"
 
+# Layout and edge-routing constants. Forward right-to-left anchors stay fixed;
+# exterior lanes are used for backward and detoured geometries (#23).
+_LAYOUT_LEFT = 72.0
+_LAYOUT_RIGHT = 888.0
+_LAYOUT_GUTTER = 30.0
+_NODE_HEIGHT = 68
+_NODE_GAP = 14
+_NODE_TOP = 176
+_NODE_BAND = 190
+_EDGE_STUB = 12.0
+_LANE_GAP = 8.0
+_EXTERIOR_TOP = 150.0
+_EXTERIOR_BOTTOM = 382.0
+_CANVAS_WIDTH = 960.0
+_CANVAS_HEIGHT = 540.0
+
 # XML 1.0 forbids most C0 control codes; only tab, newline, and carriage
 # return are legal. Anything else would either fail to parse or silently
 # corrupt the rendered SVG.
 _XML_FORBIDDEN_CONTROL = {chr(code) for code in range(0x20)} - {"\t", "\n", "\r"}
+
+
+@dataclass(frozen=True)
+class EdgeRoute:
+    """Deterministic polyline for one workflow edge."""
+
+    points: tuple[tuple[float, float], ...]
 
 
 def _required_text(value, path: str) -> str:
@@ -120,34 +144,398 @@ def validate_workflow(data: dict) -> None:
         _required_text(context.get("body"), "context.body")
 
 
+def compute_workflow_layout(
+    data: dict,
+) -> tuple[dict[str, tuple[float, float, float, float]], dict[str, int]]:
+    """Return ``(positions, node_columns)`` for a validated workflow document.
+
+    ``positions`` maps node id to ``(x, y, width, height)``. Geometry helpers use
+    this layout so edge routing can be tested without opening the forward-only
+    workflow contract.
+    """
+    validate_workflow(data)
+    columns = data["columns"]
+    column_width = (
+        _LAYOUT_RIGHT - _LAYOUT_LEFT - _LAYOUT_GUTTER * (len(columns) - 1)
+    ) / len(columns)
+    positions: dict[str, tuple[float, float, float, float]] = {}
+    node_columns: dict[str, int] = {}
+    for column_index, column in enumerate(columns):
+        x = _LAYOUT_LEFT + column_index * (column_width + _LAYOUT_GUTTER)
+        nodes = column["nodes"]
+        block_height = len(nodes) * _NODE_HEIGHT + (len(nodes) - 1) * _NODE_GAP
+        y = _NODE_TOP + (_NODE_BAND - block_height) / 2
+        for node in nodes:
+            node_id = node["id"]
+            positions[node_id] = (x, y, column_width, _NODE_HEIGHT)
+            node_columns[node_id] = column_index
+            y += _NODE_HEIGHT + _NODE_GAP
+    return positions, node_columns
+
+
+def _box_sides(box: tuple[float, float, float, float]) -> tuple[float, float, float, float]:
+    x, y, w, h = box
+    return x, y, x + w, y + h
+
+
+def _center(box: tuple[float, float, float, float]) -> tuple[float, float]:
+    x, y, w, h = box
+    return x + w / 2, y + h / 2
+
+
+def _segment_crosses_box(
+    x1: float,
+    y1: float,
+    x2: float,
+    y2: float,
+    left: float,
+    top: float,
+    right: float,
+    bottom: float,
+) -> bool:
+    """Return True when the open segment intersects the open box interior."""
+    for px, py in ((x1, y1), (x2, y2)):
+        if left < px < right and top < py < bottom:
+            return True
+    dx = x2 - x1
+    dy = y2 - y1
+    p = (-dx, dx, -dy, dy)
+    q = (x1 - left, right - x1, y1 - top, bottom - y1)
+    u1, u2 = 0.0, 1.0
+    for pi, qi in zip(p, q):
+        if pi == 0:
+            if qi <= 0:
+                return False
+            continue
+        t = qi / pi
+        if pi < 0:
+            if t > u2:
+                return False
+            if t > u1:
+                u1 = t
+        else:
+            if t < u1:
+                return False
+            if t < u2:
+                u2 = t
+    if u1 >= u2:
+        return False
+    # Sample the clipped interval; boundary-only contact is not an interior hit.
+    for u in (u1, (u1 + u2) / 2, u2):
+        if u <= 0.0 or u >= 1.0:
+            continue
+        mx = x1 + u * dx
+        my = y1 + u * dy
+        if left < mx < right and top < my < bottom:
+            return True
+    return False
+
+
+def _route_hits_nodes(
+    points: tuple[tuple[float, float], ...],
+    positions: dict[str, tuple[float, float, float, float]],
+    source_id: str,
+    target_id: str,
+) -> bool:
+    for index in range(len(points) - 1):
+        x1, y1 = points[index]
+        x2, y2 = points[index + 1]
+        for node_id, box in positions.items():
+            if node_id == source_id and index == 0:
+                continue
+            if node_id == target_id and index == len(points) - 2:
+                continue
+            left, top, right, bottom = _box_sides(box)
+            if _segment_crosses_box(x1, y1, x2, y2, left, top, right, bottom):
+                return True
+    return False
+
+
+def _assert_route_clear(
+    points: tuple[tuple[float, float], ...],
+    positions: dict[str, tuple[float, float, float, float]],
+    source_id: str,
+    target_id: str,
+) -> None:
+    if len(points) < 2:
+        raise WorkflowError(
+            f"edge geometry for {source_id} -> {target_id} produced no path"
+        )
+    for x, y in points:
+        if not (0.0 <= x <= _CANVAS_WIDTH and 0.0 <= y <= _CANVAS_HEIGHT):
+            raise WorkflowError(
+                f"edge geometry for {source_id} -> {target_id} leaves the canvas"
+            )
+    if _route_hits_nodes(points, positions, source_id, target_id):
+        raise WorkflowError(
+            f"edge geometry for {source_id} -> {target_id} crosses a node box"
+        )
+
+
+def _lane_y(lane_index: int, *, prefer_top: bool) -> float:
+    if prefer_top:
+        return _EXTERIOR_TOP - lane_index * _LANE_GAP
+    return _EXTERIOR_BOTTOM + lane_index * _LANE_GAP
+
+
+def _forward_route(
+    source: tuple[float, float, float, float],
+    target: tuple[float, float, float, float],
+    lane_index: int,
+    lane_count: int,
+) -> tuple[tuple[float, float], ...]:
+    x1 = source[0] + source[2]
+    y1 = source[1] + source[3] / 2
+    x2 = target[0]
+    y2 = target[1] + target[3] / 2
+    if lane_count <= 1:
+        return ((x1, y1), (x2, y2))
+    offset = (lane_index - (lane_count - 1) / 2) * _LANE_GAP
+    if offset == 0:
+        return ((x1, y1), (x2, y2))
+    mid_y = (y1 + y2) / 2 + offset
+    return (
+        (x1, y1),
+        (x1 + _EDGE_STUB, y1),
+        (x1 + _EDGE_STUB, mid_y),
+        (x2 - _EDGE_STUB, mid_y),
+        (x2 - _EDGE_STUB, y2),
+        (x2, y2),
+    )
+
+
+def _backward_route(
+    source: tuple[float, float, float, float],
+    target: tuple[float, float, float, float],
+    lane_index: int,
+    *,
+    prefer_top: bool,
+) -> tuple[tuple[float, float], ...]:
+    x1 = source[0]
+    y1 = source[1] + source[3] / 2
+    x2 = target[0] + target[2]
+    y2 = target[1] + target[3] / 2
+    exit_x = x1 - _EDGE_STUB
+    enter_x = x2 + _EDGE_STUB
+    lane = _lane_y(lane_index, prefer_top=prefer_top)
+    return (
+        (x1, y1),
+        (exit_x, y1),
+        (exit_x, lane),
+        (enter_x, lane),
+        (enter_x, y2),
+        (x2, y2),
+    )
+
+
+def _same_column_source_is_above(
+    source_id: str,
+    target_id: str,
+    source: tuple[float, float, float, float],
+    target: tuple[float, float, float, float],
+) -> bool:
+    _, source_cy = _center(source)
+    _, target_cy = _center(target)
+    if source_cy < target_cy:
+        return True
+    if source_cy > target_cy:
+        return False
+    return source_id < target_id
+
+
+def _same_column_intervening(
+    positions: dict[str, tuple[float, float, float, float]],
+    node_columns: dict[str, int],
+    source_id: str,
+    target_id: str,
+) -> bool:
+    column = node_columns[source_id]
+    _, source_cy = _center(positions[source_id])
+    _, target_cy = _center(positions[target_id])
+    lo, hi = sorted((source_cy, target_cy))
+    for node_id, box in positions.items():
+        if node_id in (source_id, target_id):
+            continue
+        if node_columns[node_id] != column:
+            continue
+        _, cy = _center(box)
+        if lo < cy < hi:
+            return True
+    return False
+
+
+def _same_column_route(
+    source_id: str,
+    target_id: str,
+    source: tuple[float, float, float, float],
+    target: tuple[float, float, float, float],
+    positions: dict[str, tuple[float, float, float, float]],
+    node_columns: dict[str, int],
+    lane_index: int,
+) -> tuple[tuple[float, float], ...]:
+    above = _same_column_source_is_above(source_id, target_id, source, target)
+    if above:
+        start = (source[0] + source[2] / 2, source[1] + source[3])
+        end = (target[0] + target[2] / 2, target[1])
+    else:
+        start = (source[0] + source[2] / 2, source[1])
+        end = (target[0] + target[2] / 2, target[1] + target[3])
+    if not _same_column_intervening(positions, node_columns, source_id, target_id):
+        direct = (start, end)
+        if not _route_hits_nodes(direct, positions, source_id, target_id):
+            return direct
+    # Detour through a deterministic exterior side lane beside the column.
+    side_x = source[0] - _EDGE_STUB - lane_index * _LANE_GAP
+    if side_x < 0:
+        side_x = source[0] + source[2] + _EDGE_STUB + lane_index * _LANE_GAP
+    return (start, (side_x, start[1]), (side_x, end[1]), end)
+
+
+def _assign_lane_indices(edges: list[dict]) -> list[int]:
+    """Stable parallel-edge lane indices keyed by (from, to) appearance order."""
+    groups: dict[tuple[str, str], list[int]] = {}
+    for index, edge in enumerate(edges):
+        key = (edge["from"], edge["to"])
+        groups.setdefault(key, []).append(index)
+    lanes = [0] * len(edges)
+    for indexes in groups.values():
+        for lane, edge_index in enumerate(indexes):
+            lanes[edge_index] = lane
+    return lanes
+
+
+def _lane_counts(edges: list[dict]) -> list[int]:
+    counts_by_key: dict[tuple[str, str], int] = {}
+    for edge in edges:
+        key = (edge["from"], edge["to"])
+        counts_by_key[key] = counts_by_key.get(key, 0) + 1
+    return [counts_by_key[(edge["from"], edge["to"])] for edge in edges]
+
+
+def route_workflow_edges(
+    positions: dict[str, tuple[float, float, float, float]],
+    node_columns: dict[str, int],
+    edges: list[dict],
+) -> list[EdgeRoute]:
+    """Route edges with collision-free anchors and deterministic exterior lanes.
+
+    Forward edges keep right-center → left-center straight lines when a single
+    clear path exists. Backward edges leave the source left-center and enter the
+    target right-center via exterior lanes. Same-column edges use top/bottom
+    centers ordered by node center with a stable id tie-break.
+    """
+    if not isinstance(edges, list):
+        raise WorkflowError("edges must be a list")
+    lanes = _assign_lane_indices(edges)
+    counts = _lane_counts(edges)
+    routes: list[EdgeRoute] = []
+    for edge_index, edge in enumerate(edges):
+        if not isinstance(edge, dict):
+            raise WorkflowError(f"edges[{edge_index}] must be an object")
+        source_id = edge["from"]
+        target_id = edge["to"]
+        if source_id not in positions or target_id not in positions:
+            raise WorkflowError(
+                f"edge {source_id} -> {target_id} references an unknown node"
+            )
+        source = positions[source_id]
+        target = positions[target_id]
+        source_col = node_columns[source_id]
+        target_col = node_columns[target_id]
+        lane_index = lanes[edge_index]
+        lane_count = counts[edge_index]
+        if source_col < target_col:
+            points = _forward_route(source, target, lane_index, lane_count)
+            if _route_hits_nodes(points, positions, source_id, target_id):
+                # Detour via exterior lane while preserving endpoint anchors.
+                prefer_top = _center(source)[1] <= _NODE_TOP + _NODE_BAND / 2
+                x1 = source[0] + source[2]
+                y1 = source[1] + source[3] / 2
+                x2 = target[0]
+                y2 = target[1] + target[3] / 2
+                exit_x = x1 + _EDGE_STUB
+                enter_x = x2 - _EDGE_STUB
+                lane = _lane_y(lane_index, prefer_top=prefer_top)
+                points = (
+                    (x1, y1),
+                    (exit_x, y1),
+                    (exit_x, lane),
+                    (enter_x, lane),
+                    (enter_x, y2),
+                    (x2, y2),
+                )
+        elif source_col > target_col:
+            prefer_top = _center(source)[1] <= _NODE_TOP + _NODE_BAND / 2
+            # Cycle companions: offset backward lanes so they never share the
+            # forward straight path's y.
+            cycle_boost = 0
+            reverse_key = (target_id, source_id)
+            if any(
+                other.get("from") == reverse_key[0] and other.get("to") == reverse_key[1]
+                for other in edges
+            ):
+                cycle_boost = 1
+            points = _backward_route(
+                source,
+                target,
+                lane_index + cycle_boost,
+                prefer_top=prefer_top,
+            )
+            if _route_hits_nodes(points, positions, source_id, target_id):
+                points = _backward_route(
+                    source,
+                    target,
+                    lane_index + cycle_boost,
+                    prefer_top=not prefer_top,
+                )
+        else:
+            points = _same_column_route(
+                source_id,
+                target_id,
+                source,
+                target,
+                positions,
+                node_columns,
+                lane_index,
+            )
+        _assert_route_clear(points, positions, source_id, target_id)
+        routes.append(EdgeRoute(points=points))
+    return routes
+
+
 def _text(value, path: str = "rendered text") -> str:
     text = str(value)
     _reject_control_characters(text, path)
     return escape(text, {'"': "&quot;"})
 
 
+def _format_point(value: float) -> str:
+    return f"{value:.1f}"
+
+
+def _edge_svg(points: tuple[tuple[float, float], ...]) -> str:
+    if len(points) == 2:
+        (x1, y1), (x2, y2) = points
+        return (
+            f'  <line class="workflow-edge" x1="{_format_point(x1)}" '
+            f'y1="{_format_point(y1)}" x2="{_format_point(x2)}" '
+            f'y2="{_format_point(y2)}" stroke="{ACCENT}" stroke-width="1.5" '
+            f'opacity="0.9" marker-end="url(#workflow-arrow)"/>'
+        )
+    point_str = " ".join(
+        f"{_format_point(x)},{_format_point(y)}" for x, y in points
+    )
+    return (
+        f'  <polyline class="workflow-edge" fill="none" points="{point_str}" '
+        f'stroke="{ACCENT}" stroke-width="1.5" opacity="0.9" '
+        f'marker-end="url(#workflow-arrow)"/>'
+    )
+
+
 def render_workflow(data: dict) -> str:
     """Validate *data* and return a complete SVG document."""
-    validate_workflow(data)
-
+    positions, node_columns = compute_workflow_layout(data)
     columns = data["columns"]
-    left = 72
-    right = 888
-    gutter = 30
-    column_width = (right - left - gutter * (len(columns) - 1)) / len(columns)
-    node_height = 68
-    node_gap = 14
-    node_top = 176
-    positions: dict[str, tuple[float, float, float, float]] = {}
-
-    for column_index, column in enumerate(columns):
-        x = left + column_index * (column_width + gutter)
-        nodes = column["nodes"]
-        block_height = len(nodes) * node_height + (len(nodes) - 1) * node_gap
-        y = node_top + (190 - block_height) / 2
-        for node in nodes:
-            positions[node["id"]] = (x, y, column_width, node_height)
-            y += node_height + node_gap
 
     out = [
         '<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" '
@@ -185,25 +573,31 @@ def render_workflow(data: dict) -> str:
         )
     out.append(f'  <line x1="72" y1="139" x2="888" y2="139" stroke="{HAIRLINE}"/>')
 
+    left = _LAYOUT_LEFT
+    gutter = _LAYOUT_GUTTER
+    column_width = (
+        _LAYOUT_RIGHT - _LAYOUT_LEFT - _LAYOUT_GUTTER * (len(columns) - 1)
+    ) / len(columns)
     for column_index, column in enumerate(columns):
         x = left + column_index * (column_width + gutter)
         out.append(
             f'  <text x="{x:.1f}" y="164" fill="{ACCENT}" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="10" font-weight="600" letter-spacing="1.7">{_text(column["title"].upper(), f"columns[{column_index}].title")}</text>'
         )
 
-    for edge_index, edge in enumerate(data.get("edges", [])):
-        source = positions[edge["from"]]
-        target = positions[edge["to"]]
-        x1 = source[0] + source[2]
-        y1 = source[1] + source[3] / 2
-        x2 = target[0]
-        y2 = target[1] + target[3] / 2
-        out.append(
-            f'  <line class="workflow-edge" x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="{ACCENT}" stroke-width="1.5" opacity="0.9" marker-end="url(#workflow-arrow)"/>'
-        )
+    edges = data.get("edges", [])
+    routes = route_workflow_edges(positions, node_columns, edges)
+    for edge_index, (edge, route) in enumerate(zip(edges, routes)):
+        out.append(_edge_svg(route.points))
         if edge.get("label"):
-            label_x = (x1 + x2) / 2
-            label_y = (y1 + y2) / 2 - 8
+            xs = [point[0] for point in route.points]
+            ys = [point[1] for point in route.points]
+            label_x = (min(xs) + max(xs)) / 2
+            label_y = (min(ys) + max(ys)) / 2 - 8
+            # Preserve historical label placement for two-point forward edges.
+            if len(route.points) == 2:
+                (x1, y1), (x2, y2) = route.points
+                label_x = (x1 + x2) / 2
+                label_y = (y1 + y2) / 2 - 8
             out.append(
                 f'  <text x="{label_x:.1f}" y="{label_y:.1f}" text-anchor="middle" fill="{DIM}" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="9">{_text(edge["label"], f"edges[{edge_index}].label")}</text>'
             )
