@@ -519,3 +519,27 @@ def test_cli_workflow_rejects_unsupported_scan_policy_without_traceback(
     assert "scan_policy" in captured.err
     assert "scan_patterns" in captured.err
     assert not (tmp_path / "pipeline.svg").exists()
+
+
+@pytest.mark.parametrize(
+    "pattern",
+    [
+        "(a+)+$",    # classic nested-quantifier ReDoS
+        "(a|a)+",    # ambiguous alternation ReDoS
+    ],
+)
+def test_cli_workflow_redos_scan_pattern_returns_two_without_traceback(
+    tmp_path, capsys, pattern
+):
+    data = _spec()
+    data["scan_patterns"] = [["redos-pattern", pattern]]
+    source = _write_spec(tmp_path, data)
+
+    code = main(["workflow", str(source)])
+
+    assert code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "Traceback" not in captured.err
+    assert "redos-pattern" in captured.err
+    assert not (tmp_path / "pipeline.svg").exists()
