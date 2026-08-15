@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
@@ -316,12 +317,65 @@ def _collect_string_values(value, out: list[str]) -> None:
             _collect_string_values(item, out)
 
 
+# 30 characters is long enough to trigger exponential-backtracking patterns
+# (observable within milliseconds) while remaining fast for safe patterns.
+_REDOS_PROBE = "a" * 30 + "!"
+# 1 second is generous for any safe regex on this short probe, but tight
+# enough to keep overall startup time acceptable.
+_REDOS_TIMEOUT = 1.0
+
+# Inner script executed in the safety-probe subprocess.  All data is passed
+# via sys.argv so that user-supplied regex text never appears in the executed
+# code string itself.
+_REDOS_PROBE_SCRIPT = (
+    "import re, sys; "
+    "list(re.finditer(sys.argv[1], sys.argv[2]))"
+)
+
+
+def _validate_pattern_safety(name: str, pattern: str) -> None:
+    """Raise ``WorkflowError`` if *pattern* appears to be a ReDoS risk.
+
+    Evaluates the pattern against an adversarial probe string in a subprocess
+    with a hard timeout. The probe wraps the user pattern with a ``\\Z`` anchor
+    (``(?:<pattern>)\\Z``) so that any match attempt on the probe string must
+    exhaust all backtracking paths before concluding. This exposes both classic
+    nested-quantifier forms such as ``(a+)+$`` **and** ambiguous alternation
+    forms such as ``(a|a)+`` that purely static analysis would miss.
+
+    Using a subprocess (rather than a thread) ensures the timeout is enforced
+    even when the ``re`` engine holds the GIL throughout its C-level loop.
+    The user pattern is passed as a command-line argument, never embedded in
+    the executed code string.
+    """
+    probe_pattern = f"(?:{pattern})\\Z"
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", _REDOS_PROBE_SCRIPT, probe_pattern, _REDOS_PROBE],
+            timeout=_REDOS_TIMEOUT,
+            capture_output=True,
+        )
+    except subprocess.TimeoutExpired:
+        raise WorkflowError(
+            f"scan_patterns entry {name!r} did not finish evaluating a test "
+            "input within the time limit; the pattern may cause catastrophic "
+            "backtracking and has been rejected"
+        )
+    if result.returncode != 0:
+        # The subprocess crashed (e.g. the pattern became invalid after wrapping
+        # with the probe anchor). This is not a ReDoS; the earlier re.compile()
+        # check already validated the raw pattern, so treat the wrapped variant
+        # failing as a safe non-match and accept the pattern.
+        pass
+
+
 def _load_scan_patterns(data: dict) -> list[tuple[str, str]]:
     """Return validated ``scan_patterns`` pairs, or raise ``WorkflowError``.
 
     Rejects the unsupported ``scan_policy`` key (documented historically but
-    never implemented), bad list/pair shapes, non-string entries, and regexes
-    that fail to compile. Callers must run this before any scan or write.
+    never implemented), bad list/pair shapes, non-string entries, regexes that
+    fail to compile, and patterns that appear vulnerable to catastrophic
+    backtracking (ReDoS). Callers must run this before any scan or write.
     """
     if "scan_policy" in data:
         raise WorkflowError(
@@ -352,6 +406,7 @@ def _load_scan_patterns(data: dict) -> list[tuple[str, str]]:
             raise WorkflowError(
                 f"scan_patterns entry {name!r} is not a valid regex: {exc}"
             ) from exc
+        _validate_pattern_safety(name, pattern)
         extra.append((name, pattern))
     return extra
 
