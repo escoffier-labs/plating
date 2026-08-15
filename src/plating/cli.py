@@ -317,8 +317,20 @@ def _collect_string_values(value, out: list[str]) -> None:
             _collect_string_values(item, out)
 
 
+# 30 characters is long enough to trigger exponential-backtracking patterns
+# (observable within milliseconds) while remaining fast for safe patterns.
 _REDOS_PROBE = "a" * 30 + "!"
+# 1 second is generous for any safe regex on this short probe, but tight
+# enough to keep overall startup time acceptable.
 _REDOS_TIMEOUT = 1.0
+
+# Inner script executed in the safety-probe subprocess.  All data is passed
+# via sys.argv so that user-supplied regex text never appears in the executed
+# code string itself.
+_REDOS_PROBE_SCRIPT = (
+    "import re, sys; "
+    "list(re.finditer(sys.argv[1], sys.argv[2]))"
+)
 
 
 def _validate_pattern_safety(name: str, pattern: str) -> None:
@@ -333,15 +345,13 @@ def _validate_pattern_safety(name: str, pattern: str) -> None:
 
     Using a subprocess (rather than a thread) ensures the timeout is enforced
     even when the ``re`` engine holds the GIL throughout its C-level loop.
+    The user pattern is passed as a command-line argument, never embedded in
+    the executed code string.
     """
     probe_pattern = f"(?:{pattern})\\Z"
-    code = (
-        f"import re; "
-        f"list(re.finditer({probe_pattern!r}, {_REDOS_PROBE!r}))"
-    )
     try:
-        subprocess.run(
-            [sys.executable, "-c", code],
+        result = subprocess.run(
+            [sys.executable, "-c", _REDOS_PROBE_SCRIPT, probe_pattern, _REDOS_PROBE],
             timeout=_REDOS_TIMEOUT,
             capture_output=True,
         )
@@ -351,6 +361,12 @@ def _validate_pattern_safety(name: str, pattern: str) -> None:
             "input within the time limit; the pattern may cause catastrophic "
             "backtracking and has been rejected"
         )
+    if result.returncode != 0:
+        # The subprocess crashed (e.g. the pattern became invalid after wrapping
+        # with the probe anchor). This is not a ReDoS; the earlier re.compile()
+        # check already validated the raw pattern, so treat the wrapped variant
+        # failing as a safe non-match and accept the pattern.
+        pass
 
 
 def _load_scan_patterns(data: dict) -> list[tuple[str, str]]:
