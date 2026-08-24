@@ -148,3 +148,90 @@ def test_edges_use_straight_fleet_connectors():
 
     assert len(edges) == 2
     assert curved_edges == []
+
+
+def _node_rects(root):
+    namespace = {"svg": "http://www.w3.org/2000/svg"}
+    return sorted(
+        (float(e.attrib["x"]), float(e.attrib["y"]), float(e.attrib["width"]))
+        for e in root.findall(".//svg:rect", namespace)
+        if all(k in e.attrib for k in ("x", "y", "width", "height"))
+        and float(e.attrib["width"]) < 400
+        and float(e.attrib["height"]) == 68
+    )
+
+
+def _path_points(path):
+    return [
+        tuple(float(v) for v in pair.split(","))
+        for pair in path.attrib["d"].replace("M ", "").split(" L ")
+    ]
+
+
+def test_backward_edge_routes_around_nodes():
+    data = _spec()
+    data["edges"] = [{"from": "check", "to": "source", "label": "feedback"}]
+
+    root = ET.fromstring(render_workflow(data))
+    namespace = {"svg": "http://www.w3.org/2000/svg"}
+    path = root.find('.//svg:path[@class="workflow-edge"]', namespace)
+
+    assert path is not None
+    points = _path_points(path)
+    rects = _node_rects(root)
+    # Anchors sit exactly on node edges (exits a left edge, enters a right edge).
+    assert any(
+        pytest.approx(x, abs=0.2) == points[0][0] for x, _, _ in rects
+    )
+    assert any(
+        pytest.approx(x + w, abs=0.2) == points[-1][0] for x, _, w in rects
+    )
+    # Vertical segment lives in the gutter left of the source column.
+    back_x = points[1][0]
+    assert back_x < points[0][0]
+    assert all(point[0] == pytest.approx(back_x, abs=0.05) for point in points[1:3])
+
+
+def test_same_column_edge_uses_gutter_bypass():
+    data = _spec()
+    data["columns"][0]["nodes"].append({"id": "cache", "label": "cache"})
+    data["edges"] = [{"from": "source", "to": "cache", "label": "warm"}]
+
+    root = ET.fromstring(render_workflow(data))
+    namespace = {"svg": "http://www.w3.org/2000/svg"}
+    path = root.find('.//svg:path[@class="workflow-edge"]', namespace)
+
+    assert path is not None
+    points = _path_points(path)
+    xs = [point[0] for point in points]
+    # Both anchors sit on the same node edge; bypass stays to the right.
+    assert xs[0] == xs[-1]
+    assert max(xs) > xs[0]
+    assert len(points) == 4
+
+
+def test_mixed_diagram_edges_stay_in_distinct_lanes():
+    data = _spec()
+    data["columns"][0]["nodes"].append({"id": "cache", "label": "cache"})
+    data["edges"] = [
+        {"from": "source", "to": "check"},
+        {"from": "check", "to": "release"},
+        {"from": "check", "to": "source"},
+        {"from": "source", "to": "cache"},
+    ]
+
+    svg = render_workflow(data)
+    root = ET.fromstring(svg)
+    namespace = {"svg": "http://www.w3.org/2000/svg"}
+
+    paths = root.findall('.//svg:path[@class="workflow-edge"]', namespace)
+    lines = root.findall('.//svg:line[@class="workflow-edge"]', namespace)
+    assert len(paths) == 2
+    assert len(lines) == 2
+
+    lanes = []
+    for path in paths:
+        points = _path_points(path)
+        lanes.append(round(points[1][0], 1))
+    assert lanes[0] != lanes[1]
+    ET.fromstring(svg)

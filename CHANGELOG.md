@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+- Workflow renderer now supports backward and same-column edge geometry (#23): non-forward edges route through collision-free gutter lanes with distinct anchors and polyline paths, and every special edge gets a unique lane so mixed diagrams no longer overlap connectors.
+
 ## [0.2.0] - 2026-06-27
 
 ### Added
