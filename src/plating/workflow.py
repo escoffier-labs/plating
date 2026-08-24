@@ -68,7 +68,6 @@ def validate_workflow(data: dict) -> None:
         raise WorkflowError("columns must contain between 2 and 4 columns")
 
     node_ids: set[str] = set()
-    node_columns: dict[str, int] = {}
     for column_index, column in enumerate(columns):
         if not isinstance(column, dict):
             raise WorkflowError(f"columns[{column_index}] must be an object")
@@ -87,7 +86,6 @@ def validate_workflow(data: dict) -> None:
             if node_id in node_ids:
                 raise WorkflowError(f"duplicate node id: {node_id}")
             node_ids.add(node_id)
-            node_columns[node_id] = column_index
             kind = node.get("kind", "default")
             if not isinstance(kind, str):
                 raise WorkflowError(f"{path}.kind must be a string")
@@ -106,12 +104,6 @@ def validate_workflow(data: dict) -> None:
             raise WorkflowError(
                 f"edge {source} -> {target} references an unknown node"
             )
-        if node_columns[target] <= node_columns[source]:
-            raise WorkflowError(
-                f"edge {source} -> {target} must flow forward "
-                f"from an earlier column to a later column"
-            )
-
     context = data.get("context")
     if context is not None:
         if not isinstance(context, dict):
@@ -191,19 +183,61 @@ def render_workflow(data: dict) -> str:
             f'  <text x="{x:.1f}" y="164" fill="{ACCENT}" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="10" font-weight="600" letter-spacing="1.7">{_text(column["title"].upper(), f"columns[{column_index}].title")}</text>'
         )
 
+    lane = 0
     for edge_index, edge in enumerate(data.get("edges", [])):
         source = positions[edge["from"]]
         target = positions[edge["to"]]
-        x1 = source[0] + source[2]
-        y1 = source[1] + source[3] / 2
-        x2 = target[0]
-        y2 = target[1] + target[3] / 2
-        out.append(
-            f'  <line class="workflow-edge" x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="{ACCENT}" stroke-width="1.5" opacity="0.9" marker-end="url(#workflow-arrow)"/>'
-        )
-        if edge.get("label"):
+        source_column = source[0]
+        target_column = target[0]
+
+        if abs(source_column - target_column) < 0.5:
+            x_side = source_column + source[2]
+            y1 = source[1] + source[3] / 2
+            y2 = target[1] + target[3] / 2
+            offset = min(8 + lane * 8, gutter - 4)
+            lane += 1
+            points = [
+                (x_side, y1),
+                (x_side + offset, y1),
+                (x_side + offset, y2),
+                (x_side, y2),
+            ]
+            label_x = x_side + offset
+            label_y = (y1 + y2) / 2
+        elif target_column < source_column:
+            y1 = source[1] + source[3] / 2
+            y2 = target[1] + target[3] / 2
+            offset = min(8 + lane * 8, gutter - 4)
+            lane += 1
+            x_back = source_column - offset
+            points = [
+                (source_column, y1),
+                (x_back, y1),
+                (x_back, y2),
+                (target_column + target[2], y2),
+            ]
+            label_x = x_back
+            label_y = (y1 + y2) / 2
+        else:
+            x1 = source_column + source[2]
+            y1 = source[1] + source[3] / 2
+            x2 = target_column
+            y2 = target[1] + target[3] / 2
+            points = [(x1, y1), (x2, y2)]
             label_x = (x1 + x2) / 2
             label_y = (y1 + y2) / 2 - 8
+
+        if len(points) == 2:
+            (x1, y1), (x2, y2) = points
+            out.append(
+                f'  <line class="workflow-edge" x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="{ACCENT}" stroke-width="1.5" opacity="0.9" marker-end="url(#workflow-arrow)"/>'
+            )
+        else:
+            d = "M " + " L ".join(f"{px:.1f},{py:.1f}" for px, py in points)
+            out.append(
+                f'  <path class="workflow-edge" d="{d}" fill="none" stroke="{ACCENT}" stroke-width="1.5" opacity="0.9" marker-end="url(#workflow-arrow)"/>'
+            )
+        if edge.get("label"):
             out.append(
                 f'  <text x="{label_x:.1f}" y="{label_y:.1f}" text-anchor="middle" fill="{DIM}" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="9">{_text(edge["label"], f"edges[{edge_index}].label")}</text>'
             )
