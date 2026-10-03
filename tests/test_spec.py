@@ -1102,6 +1102,7 @@ def test_live_run_env_allowlist_excludes_home_and_tokens(tmp_path, monkeypatch):
         return FakeProc()
 
     monkeypatch.setattr("plating.spec.subprocess.run", fake_run)
+    # content-guard: allow pii/home-path (synthetic environment fixture)
     monkeypatch.setenv("HOME", "/home/sneaky")
     monkeypatch.setenv("GITHUB_TOKEN", "ghp-secret")
     monkeypatch.setenv("PATH", "/usr/bin")

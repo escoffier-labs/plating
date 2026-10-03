@@ -8,8 +8,11 @@ plain <img>, with no runtime JavaScript.
 """
 from __future__ import annotations
 
+import math
+import re
 import shutil
 import subprocess
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 
@@ -41,8 +44,71 @@ def render_svg(cast_path, svg_path, *, width=84, height=30, padding=14,
     return svg_path
 
 
-def render_png(svg_path, png_path, *, scale=2, window_size="960,820") -> Path:
-    """Rasterize a static SVG frame to PNG via headless Chrome (for previews)."""
+_SVG_NUMBER = r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?"
+_SVG_UNIT_PX = {
+    "px": 1,
+    "in": 96,
+    "cm": 96 / 2.54,
+    "mm": 96 / 25.4,
+    "q": 96 / 101.6,
+    "pt": 96 / 72,
+    "pc": 16,
+}
+
+
+def _svg_length(value: str | None) -> float | None:
+    """Convert absolute CSS lengths to pixels at 96px per inch."""
+    if value is None:
+        return None
+    match = re.fullmatch(
+        rf"({_SVG_NUMBER})(px|in|cm|mm|q|pt|pc)?", value.strip().lower()
+    )
+    if match is None:
+        return None
+    length = float(match[1]) * _SVG_UNIT_PX[match[2] or "px"]
+    return length if math.isfinite(length) and length > 0 else None
+
+
+def _svg_window_size(svg_path) -> str:
+    """Use root dimensions in CSS pixels; keep the legacy size if unknown."""
+    fallback = "960,820"
+    try:
+        root = ET.parse(svg_path).getroot()
+    except (OSError, ET.ParseError):
+        return fallback
+    if root.tag not in ("svg", "{http://www.w3.org/2000/svg}svg"):
+        return fallback
+    width = _svg_length(root.get("width"))
+    height = _svg_length(root.get("height"))
+    if width is None or height is None:
+        parts = re.split(r"[\s,]+", root.get("viewBox", "").strip())
+        if len(parts) != 4 or not all(re.fullmatch(_SVG_NUMBER, p) for p in parts):
+            return fallback
+        x, y, vb_width, vb_height = map(float, parts)
+        if not all(math.isfinite(v) for v in (x, y, vb_width, vb_height)):
+            return fallback
+        if vb_width <= 0 or vb_height <= 0:
+            return fallback
+        if width is None and height is None:
+            width, height = vb_width, vb_height
+        elif width is None:
+            width = height * (vb_width / vb_height)
+        else:
+            height = width * (vb_height / vb_width)
+    # Chrome's window dimensions are positive signed integers. Do not pass
+    # non-finite or overflowing values from malformed input to its CLI.
+    if not all(math.isfinite(v) and 0 < v <= 2**31 - 1 for v in (width, height)):
+        return fallback
+    return f"{math.ceil(width)},{math.ceil(height)}"
+
+
+def render_png(svg_path, png_path, *, scale=2, window_size=None) -> Path:
+    """Rasterize an SVG using its dimensions, or an explicit CSS window size.
+
+    Absolute root sizes take precedence over viewBox dimensions. Fractional
+    sizes round up; unusable dimensions retain the legacy 960x820 viewport.
+    Device scale affects PNG resolution, not the inferred CSS viewport.
+    """
     png_path = Path(png_path)
     png_path.unlink(missing_ok=True)
     chrome = next((shutil.which(n) for n in
@@ -50,6 +116,8 @@ def render_png(svg_path, png_path, *, scale=2, window_size="960,820") -> Path:
                    if shutil.which(n)), None)
     if not chrome:
         raise RenderError("no Chrome/Chromium found for PNG preview")
+    if window_size is None:
+        window_size = _svg_window_size(svg_path)
     cmd = [chrome, "--headless=new", "--hide-scrollbars",
            f"--force-device-scale-factor={scale}", f"--window-size={window_size}",
            f"--screenshot={png_path}", f"file://{Path(svg_path).resolve()}"]

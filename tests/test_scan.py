@@ -4,11 +4,13 @@ from plating.scan import default_patterns, prompt_patterns, scan
 
 
 def test_flags_linux_home_path():
+    # content-guard: allow pii/home-path (synthetic scanner fixture)
     findings = scan("see /home/alice/secret here")
     assert any(name == "home-path-linux" for name, _ in findings)
 
 
 def test_flags_macos_home_path():
+    # content-guard: allow pii/home-path (synthetic scanner fixture)
     findings = scan("/Users/bob/project")
     assert any(name == "home-path-macos" for name, _ in findings)
 
