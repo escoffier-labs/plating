@@ -135,6 +135,7 @@ On POSIX systems with `O_DIRECTORY` and `O_NOFOLLOW`, paths are opened component
 
 ## Sanitization
 
+<!-- content-guard: allow pii/home-path -->
 Before rendering, plating scans the recording for `/home/...` and `/Users/...` paths, the machine's current username and hostname, private IPs, and a few narrow secret shapes (`SOMETHING_TOKEN=...` / `SOMETHING_API_KEY=...` / `SOMETHING_SECRET=...` / `SOMETHING_PASSWORD=...` assignments and PEM `-----BEGIN ... PRIVATE KEY-----` headers). Secret findings are redacted so the value is never echoed back. If the scan finds one it refuses to render and tells you how to fix it with a `normalize` rule or an explicit `--allow-leaks` override.
 
 This scan is best-effort and dependency-free. It catches common shapes that leak into a recording. It is **not** a secrets scanner, so use a dedicated scanner for sensitive material.
