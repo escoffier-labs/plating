@@ -77,6 +77,47 @@ def test_render_png_uses_root_svg_dimensions(screenshot_command, svg_text, expec
 
 
 @pytest.mark.parametrize(
+    "number, unit",
+    [("96", "px"), ("1", "in"), ("2.54", "cm"), ("25.4", "mm"),
+     ("101.6", "q"), ("72", "pt"), ("6", "pc")],
+)
+@pytest.mark.parametrize("case", [str.lower, str.upper, str.capitalize])
+def test_render_png_converts_absolute_units_before_viewbox(
+    screenshot_command, number, unit, case
+):
+    svg, png, commands = screenshot_command
+    length = number + case(unit)
+    svg.write_text(
+        f'<svg width="{length}" height="{length}" viewBox="0 0 200 100"/>'
+    )
+
+    render_png(svg, png)
+
+    assert "--window-size=96,96" in commands[0]
+
+
+@pytest.mark.parametrize(
+    "dimensions, expected",
+    [
+        ('width="2in" height="1in"', "192,96"),
+        ('width="2in"', "192,96"),
+        ('height="1in"', "192,96"),
+        ('width=".1in" height="1e1pt"', "10,14"),
+        ('width="100em" height="100%"', "200,100"),
+    ],
+)
+def test_render_png_converts_units_and_preserves_viewbox_fallback(
+    screenshot_command, dimensions, expected
+):
+    svg, png, commands = screenshot_command
+    svg.write_text(f'<svg {dimensions} viewBox="0 0 200 100"/>')
+
+    render_png(svg, png)
+
+    assert f"--window-size={expected}" in commands[0]
+
+
+@pytest.mark.parametrize(
     "svg_text",
     [
         "<svg/>",
@@ -89,6 +130,13 @@ def test_render_png_uses_root_svg_dimensions(screenshot_command, svg_text, expec
         '<svg width="inf" height="200"/>',
         '<svg width="1e309" height="200"/>',
         '<svg width="999999999999999999999" height="200"/>',
+        '<svg width="0in" height="1in"/>',
+        '<svg width="-1cm" height="1in"/>',
+        '<svg width="NaNmm" height="1in"/>',
+        '<svg width="infq" height="1in"/>',
+        '<svg width="1e309pt" height="1in"/>',
+        '<svg width="1e307in" height="1in"/>',
+        '<svg width="1e9pc" height="1in"/>',
         '<svg width="300; --no-sandbox" height="200"/>',
         '<svg viewBox="0 0 -320 200"/>',
         '<svg viewBox="0 0 320"/>',
@@ -106,10 +154,13 @@ def test_render_png_falls_back_for_unusable_dimensions(screenshot_command, svg_t
     assert "--window-size=960,820" in commands[0]
 
 
-def test_render_png_preserves_explicit_window_override(screenshot_command):
+@pytest.mark.parametrize("svg_text", [None, '<svg width="2in" height="1in"/>'])
+def test_render_png_preserves_explicit_window_override(screenshot_command, svg_text):
     svg, png, commands = screenshot_command
     # Explicit callers did not need a readable SVG before viewport inference.
     assert not svg.exists()
+    if svg_text is not None:
+        svg.write_text(svg_text)
 
     render_png(svg, png, window_size="1234,567", scale=1)
 

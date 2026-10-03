@@ -45,13 +45,27 @@ def render_svg(cast_path, svg_path, *, width=84, height=30, padding=14,
 
 
 _SVG_NUMBER = r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?"
+_SVG_UNIT_PX = {
+    "px": 1,
+    "in": 96,
+    "cm": 96 / 2.54,
+    "mm": 96 / 25.4,
+    "q": 96 / 101.6,
+    "pt": 96 / 72,
+    "pc": 16,
+}
 
 
 def _svg_length(value: str | None) -> float | None:
-    """Read absolute CSS-pixel lengths, the form emitted by svg-term."""
-    if value is None or not re.fullmatch(rf"{_SVG_NUMBER}(?:px)?", value.strip()):
+    """Convert absolute CSS lengths to pixels at 96px per inch."""
+    if value is None:
         return None
-    length = float(value.strip().removesuffix("px"))
+    match = re.fullmatch(
+        rf"({_SVG_NUMBER})(px|in|cm|mm|q|pt|pc)?", value.strip().lower()
+    )
+    if match is None:
+        return None
+    length = float(match[1]) * _SVG_UNIT_PX[match[2] or "px"]
     return length if math.isfinite(length) and length > 0 else None
 
 
@@ -91,7 +105,7 @@ def _svg_window_size(svg_path) -> str:
 def render_png(svg_path, png_path, *, scale=2, window_size=None) -> Path:
     """Rasterize an SVG using its dimensions, or an explicit CSS window size.
 
-    Unitless/px root sizes take precedence over viewBox dimensions. Fractional
+    Absolute root sizes take precedence over viewBox dimensions. Fractional
     sizes round up; unusable dimensions retain the legacy 960x820 viewport.
     Device scale affects PNG resolution, not the inferred CSS viewport.
     """
